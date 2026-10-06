@@ -1,0 +1,38 @@
+# Quality gate for the media worker.
+#
+# This package had none: 1 490 lines, 41 tests nothing executed, and no linter. The Maven build
+# excludes it "per mandate" because it is a Python project — a sound reason not to compile it with
+# javac, and not a reason to leave it unchecked. It is also the product's only disk-write primitive
+# outside the database, which makes it the last component that should go unlinted.
+
+[project]
+name = "orazaka-worker-media"
+version = "1.0.0"
+description = "Native macOS media worker — MLX image/video generation and ffmpeg composition."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".venv", "__pycache__"]
+
+[tool.ruff.lint]
+# Deliberately a floor, not a ceiling: pycodestyle, pyflakes, isort, bugbear and the security set.
+# A first gate that fails on 300 style nits gets disabled within a week; this one has to pass today
+# and can be tightened once it does.
+select = ["E", "F", "I", "B", "S"]
+ignore = [
+  "E501",   # line length is handled by the formatter, not by failing the build
+  "S603",   # subprocess without shell — this worker's whole job is invoking ffmpeg
+  "S607",   # partial executable path — ffmpeg is resolved from PATH by design
+]
+
+[tool.ruff.lint.per-file-ignores]
+# A test file's risk profile is not production's: an assert IS the test, a temp path is a
+# fixture, and an unused `as mock_x` is a patch whose call is not the thing being asserted.
+"test_*.py" = ["S101", "S108", "F841", "S310", "S311"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+addopts = "-q"

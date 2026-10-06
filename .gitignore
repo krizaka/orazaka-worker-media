@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.coverage
+coverage.xml
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+.history/
+.codegraph/
+.claude/
+.sonarlint/
+.scannerwork/
+
+# Secrets — never committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/src/test/resources/**/*.key
+*.p12
+*.jks
+
+# Logs & local state
+*.log
+var/
+scratch/

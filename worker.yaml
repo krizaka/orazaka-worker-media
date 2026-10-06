@@ -1,0 +1,25 @@
+# What the media worker declares to the registry (ADR-038, docs/WORKER_PROTOCOL.md).
+#
+# This file replaces the VIDEO_BINDING / COMPOSE_BINDING literals that used to live in
+# consumer.py. The worker now declares what it drains in one place, binds its queues FROM this
+# declaration, and registers the same declaration with the platform — so adding a binding is a
+# config change rather than a Python edit.
+#
+# Bindings, never capabilities: this worker has no idea which pack asked for the work.
+name: orazaka-worker-media
+family: media
+bindings:
+  - "job.video.*"
+  - "job.compose.*"
+version: "1.0.0"
+concurrency: 1
+
+# HOW THIS WORKER IS STARTED, declared rather than known by the launcher (AGENTS.md §12).
+#
+# The two workers in this repository start differently — this one as a module, the validation
+# pack's as a script one directory below its venv — so a launcher that "knows" how to start a
+# worker knows it for the workers that existed when it was written. A pack shipped from outside
+# this repository has nobody to ask. `orazaka dev` discovers every worker.yaml and runs this.
+run:
+  python: ".venv/bin/python"
+  args: ["-u", "-m", "app.consumer"]

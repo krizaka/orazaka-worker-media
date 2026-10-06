@@ -1,0 +1,26 @@
+# Builds and tests orazaka-worker-media inside the Orazaka workspace (every upstream repository is
+# built from source at its default branch), then publishes to GitHub Packages on a v* tag.
+# The pipeline itself lives in krizaka/orazaka so every repository is checked the same way.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  component:
+    uses: krizaka/orazaka/.github/workflows/component.yml@main
+    with:
+      component: orazaka-worker-media
+    secrets: inherit
