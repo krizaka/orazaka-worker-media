@@ -1,0 +1,107 @@
+<svg width="800" height="180" viewBox="0 0 800 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Fonts Premium & JetBrains Mono -->
+    <style type="text/css">
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@800;900&amp;family=JetBrains+Mono:wght@700&amp;display=swap');
+      
+      .wordmark {
+        font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+      .tagline {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      /* Animations Fluides Globales */
+      @keyframes dynamic-rotation {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      @keyframes core-glow-pulse {
+        0%, 100% { transform: scale(1); opacity: 0.9; filter: drop-shadow(0 0 4px #f59e0b); }
+        50% { transform: scale(1.15); opacity: 1; filter: drop-shadow(0 0 14px #f59e0b); }
+      }
+
+      .anim-orbit {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: dynamic-rotation 35s linear infinite;
+      }
+      .anim-pulse {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: core-glow-pulse 2.5s ease-in-out infinite;
+      }
+
+      /* Couleurs Fixes Universelles (Haute visibilité Thème Clair et Sombre) */
+      .g-text-main { fill: #f59e0b; }      /* Forcé sur l'ambre pour Orazaka */
+      .g-text-sub { fill: #475569; }       /* Gris ardoise soutenu très lisible */
+      .g-shard-1 { stroke: #94a3b8; }     /* Éléments de structure neutres */
+      .g-shard-2 { stroke: #475569; }
+      .g-frame { stroke: #cbd5e1; }        /* Guides techniques */
+
+      @media (prefers-color-scheme: dark) {
+        .g-text-sub { fill: #94a3b8 !important; } /* S'éclaircit légèrement sur fond noir */
+        .g-shard-1 { stroke: #475569 !important; }
+        .g-shard-2 { stroke: #cbd5e1 !important; }
+        .g-frame { stroke: #334155 !important; }
+      }
+    </style>
+
+    <linearGradient id="orazaka-amber-solid" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+  </defs>
+
+  <!-- BACKGROUND TRANSPARENT -->
+  <rect width="100%" height="100%" fill="transparent"/>
+
+  <!-- ═══ SYMBOLE : L'ISOTYPE HEXAGONAL ═══ -->
+  <g transform="translate(175, 90)">
+    <!-- Guides de précision de l'infrastructure -->
+    <circle cx="0" cy="0" r="62" fill="none" class="g-frame" stroke-width="1.5" stroke-dasharray="6 6" opacity="0.5"/>
+    <circle cx="0" cy="0" r="48" fill="none" class="g-frame" stroke-width="1" opacity="0.3"/>
+
+    <!-- Assemblage Hexagonal (Épaisseur 3.5px) -->
+    <g class="anim-orbit">
+      <!-- Fragment Supérieur -->
+      <path d="M -24 -41.5 L 0 -55.4 L 24 -41.5 L 24 -24 L 14 -18.2 L 14 -35.7 L 0 -43.8 L -14 -35.7 L -14 -18.2" fill="none" class="g-shard-1" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Fragment Inférieur Gauche -->
+      <path d="M -48 0 L -38 17.3 L -14 31.2 L 0 23.1 L -10 17.3 L -24 9.2 L -24 -9.2" fill="none" class="g-shard-2" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Fragment Inférieur Droite (Signature Ambre Orazaka) -->
+      <path d="M 48 0 L 38 17.3 L 14 31.2 L 0 23.1 L 10 17.3 L 24 9.2 L 24 -9.2" fill="none" stroke="url(#orazaka-amber-solid)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+
+    <!-- Noyau Lumineux -->
+    <circle class="anim-pulse" cx="0" cy="0" r="10" fill="url(#orazaka-amber-solid)" />
+  </g>
+
+  <!-- ═══ BLOC TYPOGRAPHIQUE SÉCURISÉ ═══ -->
+  <g transform="translate(270, 102)">
+    <!-- Texte ORAZAKA : Dorénavant en AMBRE FLASHY, impossible à rater -->
+    <text x="0" y="0" class="wordmark g-text-main" font-size="56" letter-spacing="4">ORAZAKA</text>
+    
+    <!-- Point d'interception d'architecture -->
+    <circle cx="324" cy="-14" r="6" fill="url(#orazaka-amber-solid)" />
+    
+    <!-- Baseline Technique -->
+    <g transform="translate(2, 26)">
+      <!-- Badge indicateur "CORE" -->
+      <rect x="0" y="-11" width="46" height="15" rx="3" fill="#f59e0b" />
+      <text x="23" y="1" class="tagline" font-size="9" fill="#000000" font-weight="900" text-anchor="middle">CORE</text>
+      
+      <!-- Baseline réajustée en gris neutre fort pour être lue partout -->
+      <text x="58" y="2" class="tagline g-text-sub" font-size="12" letter-spacing="1.8">NATIVE AI ORCHESTRATION ENGINE</text>
+    </g>
+  </g>
+
+  <!-- Cornières Tech périphériques -->
+  <path d="M 30 25 L 30 15 L 40 15" class="g-frame" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 770 25 L 770 15 L 760 15" class="g-frame" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 30 155 L 30 165 L 40 165" class="g-frame" stroke-width="1.5" opacity="0.6"/>
+  <path d="M 770 155 L 770 165 L 760 165" class="g-frame" stroke-width="1.5" opacity="0.6"/>
+</svg>
