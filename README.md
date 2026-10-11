@@ -1,7 +1,10 @@
 <!-- krizaka-header -->
 <div align="center">
 
-<img src=".github/assets/orazaka-logo.svg" alt="Orazaka" width="420">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/krizaka/.github/main/profile/assets/orazaka-dark.svg">
+  <img src="https://raw.githubusercontent.com/krizaka/.github/main/profile/assets/orazaka-light.svg" alt="Orazaka" width="96">
+</picture>
 
 # Orazaka Media Worker
 
@@ -11,8 +14,8 @@ Native (Metal) Python worker for image/video generation and media composition, s
 
 [![CI](https://github.com/krizaka/orazaka-worker-media/actions/workflows/ci.yml/badge.svg)](https://github.com/krizaka/orazaka-worker-media/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Orazaka](https://img.shields.io/badge/part%20of-Orazaka-f59e0b)](https://github.com/krizaka/orazaka#repositories)
-[![Docs](https://img.shields.io/badge/docs-krizaka.com-6366f1)](https://www.krizaka.com/en/products/orazaka)
+[![Orazaka](https://img.shields.io/badge/part%20of-Orazaka-f67e23)](https://github.com/krizaka/orazaka#repositories)
+[![Docs](https://img.shields.io/badge/docs-krizaka.com-f67e23)](https://www.krizaka.com/en/products/orazaka)
 
 [Documentation](https://www.krizaka.com/en/products/orazaka) · [Website](https://www.krizaka.com) · [Krizaka on GitHub](https://github.com/krizaka)
 
