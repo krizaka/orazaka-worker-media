@@ -124,6 +124,20 @@ def _output_paths(user_id: str, job_id: str) -> tuple:
     return file_path, public_url
 
 
+# The model a Studio step leaves unresolved: its payload carries "" (``{{inputs.model:}}``) and the
+# job "default" (JobCommand's sentinel). Neither names a pipeline: sent on, the HTTP pipeline answered
+# 400 "model is not registered" and every video-generation run failed.
+_UNRESOLVED_MODELS = ("", "default")
+
+
+def _requested_model(payload: dict, job: dict):
+    """The model the caller asked for — the payload's, then the job's — or None to let the pipeline pick."""
+    for candidate in (payload.get("model"), job.get("model")):
+        if isinstance(candidate, str) and candidate.strip() not in _UNRESOLVED_MODELS:
+            return candidate.strip()
+    return None
+
+
 def _generate(job: dict) -> tuple:
     """Runs the generation through the local HTTP pipeline.
 
@@ -141,8 +155,11 @@ def _generate(job: dict) -> tuple:
     request_body["prompt"] = prompt
     request_body["job_id"] = job_id
     request_body["output_path"] = output_path
-    if job.get("model"):
-        request_body.setdefault("model", job["model"])
+    model = _requested_model(payload, job)
+    if model:
+        request_body["model"] = model
+    else:
+        request_body.pop("model", None)
 
     request = urllib.request.Request(
         f"http://127.0.0.1:{_http_port()}/v1/videos/generations",
