@@ -738,6 +738,15 @@ class TestConsumerDispatch(unittest.TestCase):
                     # One pass: it must swallow the connection error and reach the sleep.
                     registration.register_forever(load_declaration_for_test())
 
+    def test_an_unresolved_model_is_left_to_the_pipeline(self):
+        """A Studio step sends model "" in its payload and "default" on the job: neither is a model name."""
+        from app.consumer import _requested_model
+
+        self.assertIsNone(_requested_model({"model": ""}, {"model": "default"}))
+        self.assertIsNone(_requested_model({}, {}))
+        self.assertEqual(_requested_model({"model": ""}, {"model": "mlx-animatediff-lightning"}), "mlx-animatediff-lightning")
+        self.assertEqual(_requested_model({"model": "animatediff-lightning-mps"}, {"model": "default"}), "animatediff-lightning-mps")
+
     def test_compose_is_decided_by_the_routing_key(self):
         from app.consumer import _is_compose
 
