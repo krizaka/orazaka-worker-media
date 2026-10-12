@@ -17,3 +17,6 @@
 
 1. `python -m pytest -q test_capability_contract.py` and `python test_main.py` are green.
 2. Bindings declared in `worker.yaml` match the capability registry (EXEC-002, checked in the workspace).
+3. The change ships with its tests (pytest) — the capability contract for a new binding, a unit test for logic; a
+   fix starts with a failing test. CI runs them and must be green; no test = not done (workspace
+   [`AGENTS.md` §9](https://github.com/krizaka/orazaka/blob/main/AGENTS.md#9-testing)).
