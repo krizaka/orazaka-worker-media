@@ -13,6 +13,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+import urllib.request
 from http.server import HTTPServer
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -124,6 +125,53 @@ class TestModelRouting(unittest.TestCase):
             self.assertEqual(theirs, ours, name)
 
 
+class TestSdServerLine(unittest.TestCase):
+    """The droplet's sd-server is started like the Mac's: the recipe's files and defaults."""
+
+    def test_the_flux_klein_line(self):
+        from app import sd_server
+
+        line = sd_server.args("flux-2-klein-4b", Path("/models"), 8086, {})
+        self.assertEqual(["--listen-ip", "0.0.0.0", "--listen-port", "8086"], line[:4])  # noqa: S104
+        self.assertIn("--diffusion-model", line)
+        self.assertEqual("/models/sd/flux2-klein-4b/Qwen3-4B-Q8_0.gguf", line[line.index("--llm") + 1])
+        self.assertEqual("4", line[line.index("--steps") + 1])
+        self.assertIn("--diffusion-fa", line)
+        self.assertNotIn("--offload-to-cpu", line)
+        self.assertIn("--offload-to-cpu", sd_server.args("flux-2-klein-4b", Path("/m"), 8086, {"MEDIA_IMAGE_OFFLOAD": "true"}))
+
+    def test_the_fetch_plan_borrows_the_text_encoder_instead_of_downloading_it_twice(self):
+        from app import fetch_models
+
+        small = fetch_models.plan("small")
+        repos = {repo: patterns for repo, _rev, patterns in small["hf"]}
+        self.assertIn("text_encoder/*", repos["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
+        self.assertNotIn("transformer/*", repos["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
+        self.assertNotIn("text_encoder/*", repos["Wan-AI/Wan2.1-T2V-1.3B-Diffusers"])
+        self.assertEqual(3, len(small["files"]))
+        big = {repo: patterns for repo, _rev, patterns in fetch_models.plan("big")["hf"]}
+        self.assertIn("transformer/*", big["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
+
+    def test_a_file_that_does_not_match_its_checksum_is_never_used(self):
+        from app import fetch_models
+
+        root = Path(tempfile.mkdtemp(prefix="orz-fetch-"))
+        source = root / "src.bin"
+        source.write_bytes(b"not the model")
+        spec = {"path": "m/model.gguf", "url": source.as_uri(), "bytes": 13, "sha256": "0" * 64}
+        with self.assertRaises(RuntimeError):
+            fetch_models.fetch_file(spec, root / "sd")
+        self.assertFalse((root / "sd" / "m" / "model.gguf").exists())
+        import hashlib
+
+        spec["sha256"] = hashlib.sha256(b"not the model").hexdigest()
+        target = fetch_models.fetch_file(spec, root / "sd")
+        self.assertEqual(b"not the model", target.read_bytes())
+        with patch.object(fetch_models.urllib.request, "urlretrieve") as again:
+            fetch_models.fetch_file(spec, root / "sd")
+        again.assert_not_called()
+
+
 class TestOffload(unittest.TestCase):
     def test_auto_offloads_when_the_card_cannot_hold_the_model_beside_the_image_engine(self):
         from app.wan_generator import should_offload
@@ -175,8 +223,6 @@ class TestWanThroughTheHttpPipeline(unittest.TestCase):
         self.server.server_close()
 
     def _post(self, body):
-        import urllib.request
-
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.server.server_port}/v1/videos/generations",
             data=json.dumps(body).encode(),
