@@ -60,6 +60,7 @@ What the deployment declares (never assumed):
 | Variable | Meaning |
 |---|---|
 | `SPRING_RABBITMQ_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_SSL_ENABLED` | the broker and its login |
+| `SPRING_RABBITMQ_SSL_CA_FILE` / `_SSL_SERVER_NAME` | a private CA to trust, and the name the broker's certificate is checked against when the address dialled is a tunnel end |
 | `MEDIA_GPU_PROFILE` | `big` or `small`: the host's default video model (`models.yaml` profiles) |
 | `MEDIA_VIDEO_DEFAULT_MODEL` | overrides that default |
 | `MEDIA_ASSET_SINK_URL` | the job service; outputs are handed to it (sealed there) instead of kept on this disk |
