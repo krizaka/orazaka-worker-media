@@ -1,10 +1,11 @@
 import gc
 import json
-import os
 import time
 from contextlib import contextmanager
 
 import pika
+
+from app import broker
 
 try:
     import torch
@@ -18,16 +19,8 @@ EVENTS_EXCHANGE = 'orazaka.events'
 
 
 def _publish_job_event(routing_key: str, payload: dict) -> None:
-    host = os.environ.get("SPRING_RABBITMQ_HOST", "localhost")
     try:
-        port = int(os.environ.get("SPRING_RABBITMQ_PORT", "5672"))
-    except ValueError:
-        port = 5672
-
-    try:
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host=host, port=port)
-        )
+        connection = pika.BlockingConnection(broker.connection_parameters())
         channel = connection.channel()
         channel.exchange_declare(exchange=EVENTS_EXCHANGE, exchange_type='topic', durable=True)
         message = json.dumps(payload)

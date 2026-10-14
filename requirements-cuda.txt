@@ -1,0 +1,15 @@
+# The CUDA image's Python dependencies (Dockerfile.cuda). torch comes from PyTorch's cu128 index, pinned
+# in the Dockerfile: its wheels carry the CUDA 12.8 runtime, which runs on any R525+ driver.
+# The Mac's requirements.txt keeps mlx/mflux; neither installs on Linux.
+diffusers==0.41.0
+transformers==5.19.0
+accelerate==1.15.0
+safetensors==0.8.0
+huggingface_hub==1.33.0
+sentencepiece==0.2.2
+ftfy==6.3.1
+Pillow==12.3.0
+pika==1.4.4
+psutil==7.2.2
+PyYAML==6.0.3
+cryptography==50.0.2

@@ -23,18 +23,19 @@ broker delivered under — which the dispatcher took from the capability's row �
 so a new capability bound to ``job.compose.*`` works here with no change, and a
 capability this worker was never bound to never arrives.
 """
+import functools
 import json
 import os
 import tempfile
 import threading
+import urllib.error
 import urllib.request
 
 import pika
 
-from app import main
+from app import activity, asset_sink, broker, envelope, main, video_models
 from app.composer import compose
 from app.registration import load_declaration, start_background_registration
-from app import envelope
 from app.telemetry import (
     EXECUTOR_FAULT,
     INPUT_INVALID,
@@ -115,6 +116,26 @@ def _seal(path: str) -> None:
     envelope.encrypt_in_place(path, _keyring())
 
 
+def _store(path: str, job: dict, filename: str, content_type: str, local_url: str) -> str:
+    """Keeps an output where its owner can read it, and returns the URL it is served under.
+
+    Where the worker shares the platform's upload directory (the Mac), the file is sealed in place
+    (ADR-054). Where it does not (a GPU droplet, ``MEDIA_ASSET_SINK_URL``), the file is handed to the
+    job service, which seals it with the platform's key, and the local copy is deleted: the droplet
+    keeps nothing once the job is done.
+    """
+    if asset_sink.sink_url() is None:
+        _seal(path)
+        return local_url
+    try:
+        return asset_sink.upload(path, job, filename, content_type)
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def _output_paths(user_id: str, job_id: str) -> tuple:
     """Absolute output file path + the public URL the router serves it under."""
     out_dir = os.path.join(_upload_root(), user_id, job_id, "output")
@@ -149,6 +170,11 @@ def _generate(job: dict) -> tuple:
     prompt = payload.get("prompt") or payload.get("text")
     if not prompt:
         raise ValueError("Payload does not contain prompt or text field")
+    try:
+        # Checked before a GPU second is spent: an aspect nobody can make is the caller's to fix.
+        video_models.normalise_aspect(payload.get("aspect"))
+    except video_models.UnsupportedAspect as bad:
+        raise InvalidJobPayload(str(bad)) from bad
 
     output_path, public_url = _output_paths(job["userId"], job_id)
     request_body = dict(payload)
@@ -167,14 +193,21 @@ def _generate(job: dict) -> tuple:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=1800) as response:  # noqa: S310 — fixed loopback target (127.0.0.1 + configured port), never a caller-supplied URL
-        body = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=1800) as response:  # noqa: S310 — fixed loopback target (127.0.0.1 + configured port), never a caller-supplied URL
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as refused:
+        if refused.code == 400:
+            # The pipeline positively checked the request and refused it (unknown model, an aspect
+            # the model cannot make, a starting image for a text-to-video model): the caller's.
+            raise InvalidJobPayload(refused.read().decode("utf-8", "replace")[:300]) from refused
+        raise
 
     # The generator wrote plaintext through ffmpeg; seal it before anything else can read it
     # (ADR-054). In place and atomically, so a kill here leaves the plaintext or the envelope and
-    # never a half-sealed file.
-    _seal(output_path)
-    result = {"url": public_url, "format": "mp4"}
+    # never a half-sealed file — or, on a host that does not share the store, hand it over.
+    url = _store(output_path, job, "video.mp4", "video/mp4", public_url)
+    result = {"url": url, "format": "mp4"}
     metrics = body.get("metrics")
     if isinstance(metrics, dict) and metrics:
         result["metrics"] = metrics
@@ -273,8 +306,8 @@ def _compose(job: dict) -> tuple:
         readable_audio = _materialise(audio, scratch) if audio else None
         metrics = compose(readable, output_path, audio_path=readable_audio)
 
-    _seal(output_path)
-    result = {"url": public_url, "assetId": public_url, "format": "mp4", "metrics": metrics}
+    url = _store(output_path, job, "video.mp4", "video/mp4", public_url)
+    result = {"url": url, "assetId": url, "format": "mp4", "metrics": metrics}
     return result, extract_consumption(metrics)
 
 
@@ -311,9 +344,25 @@ def _hold_id(job: dict):
     return hold_id if isinstance(hold_id, str) and hold_id.strip() else None
 
 
+def _dispatch(channel, method, properties, body) -> None:
+    """The broker's callback: runs the job on a thread of its own and returns at once.
+
+    A Wan clip takes minutes. Run inline, it would stop the connection's I/O loop for all of them,
+    heartbeats included, and the broker would close the connection mid-render and redeliver the job
+    to start it again from zero. Prefetch is one, so there is never more than one such thread.
+    """
+    threading.Thread(
+        target=_on_message,
+        args=(channel, method, properties, body),
+        daemon=True,
+        name="media-job",
+    ).start()
+
+
 def _on_message(channel, method, properties, body) -> None:
     job_id = None
     hold_id = None
+    activity.touch()
     try:
         job = json.loads(body.decode("utf-8"))
         job_id = job.get("jobId")
@@ -354,17 +403,16 @@ def _on_message(channel, method, properties, body) -> None:
             # hold is carried so billing releases it.
             send_job_error(job_id, str(e), hold_id=hold_id, cause=EXECUTOR_FAULT)
     finally:
-        channel.basic_ack(delivery_tag=method.delivery_tag)
+        activity.touch()
+        # Acked from the connection's own thread: pika's BlockingConnection is not thread-safe.
+        channel.connection.add_callback_threadsafe(
+            functools.partial(channel.basic_ack, delivery_tag=method.delivery_tag)
+        )
 
 
 def run_consumer() -> None:
-    host = os.environ.get("SPRING_RABBITMQ_HOST", "localhost")
-    try:
-        port = int(os.environ.get("SPRING_RABBITMQ_PORT", "5672"))
-    except ValueError:
-        port = 5672
-
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=host, port=port))
+    params = broker.connection_parameters()
+    connection = pika.BlockingConnection(params)
     channel = connection.channel()
     # Idempotent duplicate of the platform topology (§6) so the worker can start first.
     channel.exchange_declare(exchange=JOBS_EXCHANGE, exchange_type="topic", durable=True)
@@ -393,9 +441,9 @@ def run_consumer() -> None:
     channel.queue_bind(queue=VIDEO_DLQ, exchange=DLX_EXCHANGE, routing_key=VIDEO_QUEUE)
 
     channel.basic_qos(prefetch_count=1)
-    channel.basic_consume(queue=VIDEO_QUEUE, on_message_callback=_on_message)
+    channel.basic_consume(queue=VIDEO_QUEUE, on_message_callback=_dispatch)
     print(
-        f"[consumer] consuming {VIDEO_QUEUE} ({' + '.join(BINDINGS)}) (amqp {host}:{port})",
+        f"[consumer] consuming {VIDEO_QUEUE} ({' + '.join(BINDINGS)}) ({broker.describe(params)})",
         flush=True,
     )
     try:

@@ -1,0 +1,111 @@
+# What this worker knows how to run, and how (ADR-075 for images, ADR-077 for 9:16 video).
+#
+# The CATALOGUE — which model a capability uses by default, which ones a Studio offers, which provider
+# serves them — is data in the platform's database (orazaka_models, ai_providers). This file is the
+# other half, the worker's own: for each model name the catalogue may send, where its weights come
+# from (pinned), how big they are, and how it is run. A model the catalogue names and this file does
+# not is refused by name, never replaced by another one.
+#
+# Only weights whose licence allows commercial use are listed.
+
+video:
+  # Wan 2.2 TI2V 5B — the 9:16 model of the GPU droplet `big`. 720p class (704x1280 vertical) at
+  # 24 fps, 5 s per clip, one GPU of 48 GB without offloading anything but the text encoder.
+  wan2.2-ti2v-5b:
+    label: "Wan 2.2 TI2V 5B"
+    licence: Apache-2.0
+    licenceUrl: https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers
+    pipeline: wan
+    repo: Wan-AI/Wan2.2-TI2V-5B-Diffusers
+    revision: b8fff7315c768468a5333511427288870b2e9635
+    fps: 24
+    maxFrames: 121          # Wan wants 4k+1 frames: 121 = 5 s at 24 fps
+    steps: 40
+    guidance: 5.0
+    multiple: 32            # the 5B's VAE compresses 16x16 and its transformer patches 2x2
+    sizes:
+      "9:16": [704, 1280]
+      "16:9": [1280, 704]
+      "1:1": [960, 960]
+    vramGb: 30              # bf16 transformer 10 GB + activations at 704x1280x121; text encoder offloaded
+    ramGb: 24
+    downloadGb: 34.2
+    hardware: [cuda]
+
+  # Wan 2.1 T2V 1.3B — the dev video model of the GPU droplet `small` (RTX 4000 Ada, 20 GB). 480p
+  # class (480x832 vertical) at 16 fps. Its text encoder is the same umt5-xxl as Wan 2.2's, read in
+  # bf16 from the 5B's repository: 11.4 GB instead of the 22.7 GB float32 copy its own repository holds.
+  wan2.1-t2v-1.3b:
+    label: "Wan 2.1 T2V 1.3B"
+    licence: Apache-2.0
+    licenceUrl: https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B-Diffusers
+    pipeline: wan
+    repo: Wan-AI/Wan2.1-T2V-1.3B-Diffusers
+    revision: 0fad780a534b6463e45facd96134c9f345acfa5b
+    textEncoderFrom: wan2.2-ti2v-5b
+    fps: 16
+    maxFrames: 81           # 5 s at 16 fps
+    steps: 30
+    guidance: 5.0
+    multiple: 16
+    sizes:
+      "9:16": [480, 832]
+      "16:9": [832, 480]
+      "1:1": [624, 624]
+    vramGb: 10
+    ramGb: 16
+    downloadGb: 6.2
+    hardware: [cuda]
+
+  # The Mac's model (Metal), served by app/mlx_generator.py. Listed so the aspect of a Studio reaches
+  # it too: SD 1.5 sizes, multiples of 8.
+  animatediff-lightning-mps:
+    label: "AnimateDiff Lightning (MPS)"
+    licence: Apache-2.0
+    pipeline: animatediff
+    fps: 12
+    maxFrames: 16
+    steps: 8
+    multiple: 8
+    sizes:
+      "9:16": [432, 768]
+      "16:9": [768, 432]
+      "1:1": [512, 512]
+    hardware: [mps]
+
+# The image engine is stable-diffusion.cpp's sd-server, the same backend as the Mac (ADR-075); on the
+# GPU droplet it is built for CUDA. Files and checksums are the CLI's recipe
+# (orazaka-cli/src/services/image-model-recipes.json) — test_models.py fails when they drift apart.
+image:
+  flux-2-klein-4b:
+    label: "FLUX.2 [klein] 4B"
+    licence: Apache-2.0
+    files:
+      - role: diffusion-model
+        path: flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf
+        url: https://huggingface.co/leejet/FLUX.2-klein-4B-GGUF/resolve/main/flux-2-klein-4b-Q8_0.gguf
+        bytes: 4300629440
+        sha256: 0bba6951258ec8f92d51114a8fa13e66828297bfff58a738f52729b3ef66fa28
+      - role: llm
+        path: flux2-klein-4b/Qwen3-4B-Q8_0.gguf
+        url: https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf
+        bytes: 4280405792
+        sha256: eed555233267a33c7e8ee31682762cc7751b3f6d224039086e0e846f05fffa5d
+      - role: vae
+        path: flux2-klein-4b/flux2-vae.safetensors
+        url: https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/main/vae/diffusion_pytorch_model.safetensors
+        bytes: 168120878
+        sha256: ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04
+    launch: { steps: 4, cfgScale: 1.0, width: 1024, height: 1024, flags: ["--diffusion-fa"] }
+
+# What a GPU host of each size serves. `scripts/gpu-dev.sh start big|small` (krizaka/orazaka) passes
+# the profile; `python -m app.fetch_models <profile>` puts its weights on the models volume once.
+profiles:
+  big:
+    video: [wan2.2-ti2v-5b, wan2.1-t2v-1.3b]
+    defaultVideo: wan2.2-ti2v-5b
+    image: flux-2-klein-4b
+  small:
+    video: [wan2.1-t2v-1.3b]
+    defaultVideo: wan2.1-t2v-1.3b
+    image: flux-2-klein-4b

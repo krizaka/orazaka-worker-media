@@ -37,7 +37,39 @@ pip install -r requirements.txt
 python -m pytest -q test_capability_contract.py && python test_main.py
 ```
 
-Inference never runs in Docker (AGENTS.md §1): this worker runs on the host.
+On the Mac, inference never runs in Docker (AGENTS.md §1): this worker runs on the host, on Metal.
+
+### On an NVIDIA GPU (CUDA image)
+
+`Dockerfile.cuda` builds `ghcr.io/krizaka/orazaka-worker-media:cuda-<sha>` (CI, `image.yml`): this worker plus
+`sd-server` (stable-diffusion.cpp built for CUDA). It is what the hourly GPU droplet of the dev environment runs
+(`scripts/gpu-dev.sh start big|small` in [krizaka/orazaka](https://github.com/krizaka/orazaka)).
+
+| Model (catalogue name) | What | Licence | 9:16 size | Clip | Host |
+|---|---|---|---|---|---|
+| `wan2.2-ti2v-5b` | Wan 2.2 TI2V 5B, text-to-video | Apache-2.0 | 704×1280 | 5 s @ 24 fps | `big` (48 GB) |
+| `wan2.1-t2v-1.3b` | Wan 2.1 T2V 1.3B, text-to-video | Apache-2.0 | 480×832 | 5 s @ 16 fps | `small` (20 GB), `big` |
+| `flux-2-klein-4b` | FLUX.2 [klein] 4B via sd-server | Apache-2.0 | any size | image | both |
+
+`models.yaml` says how each model is fetched (pinned revisions, checksums) and shaped; the platform's catalogue
+(`orazaka_models`) says which one a job uses. A Studio passes `aspect` (`9:16` by default, `16:9`, `1:1`) and the
+worker picks the size the model was trained at; `durationSeconds` becomes Wan's `4k+1` frames.
+
+What the deployment declares (never assumed):
+
+| Variable | Meaning |
+|---|---|
+| `SPRING_RABBITMQ_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_SSL_ENABLED` | the broker and its login |
+| `MEDIA_GPU_PROFILE` | `big` or `small`: the host's default video model (`models.yaml` profiles) |
+| `MEDIA_VIDEO_DEFAULT_MODEL` | overrides that default |
+| `MEDIA_ASSET_SINK_URL` | the job service; outputs are handed to it (sealed there) instead of kept on this disk |
+| `ORAZAKA_SERVICE_TOKEN` | a short-lived `SERVICE` token for the hand-over and the worker registry |
+| `MEDIA_ACTIVITY_FILE` | touched at each job's start and end, for the host's idle watchdog |
+| `MEDIA_VIDEO_OFFLOAD` | `auto` (default), `true`, `false`: diffusers model offload |
+
+```bash
+python -m app.fetch_models big     # weights of a profile onto MEDIA_MODELS_DIR (/models), verified, once
+```
 
 ## Position in the platform
 
