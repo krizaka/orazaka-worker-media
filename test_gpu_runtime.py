@@ -334,6 +334,30 @@ class TestBrokerLogin(unittest.TestCase):
         self.assertTrue(context.check_hostname)
         self.assertTrue(broker.describe(params).startswith("amqps://"))
 
+    def test_a_private_ca_and_the_certificate_name_are_declared(self):
+        """The GPU host dials a tunnel end (127.0.0.1) and checks the broker's own name, against the dev CA."""
+        import ssl
+        import subprocess
+
+        directory = Path(tempfile.mkdtemp(prefix="orz-ca-"))
+        ca = directory / "ca.pem"
+        subprocess.run(
+            ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes",
+             "-days", "1", "-subj", "/CN=test CA", "-keyout", str(directory / "ca.key"), "-out", str(ca)],
+            check=True, capture_output=True,
+        )
+        params = broker.connection_parameters({
+            "SPRING_RABBITMQ_HOST": "127.0.0.1",
+            "SPRING_RABBITMQ_PORT": "5671",
+            "SPRING_RABBITMQ_SSL_ENABLED": "true",
+            "SPRING_RABBITMQ_SSL_CA_FILE": str(ca),
+            "SPRING_RABBITMQ_SSL_SERVER_NAME": "broker-dev.orazaka.com",
+        })
+        self.assertEqual("broker-dev.orazaka.com", params.ssl_options.server_hostname)
+        self.assertEqual(ssl.CERT_REQUIRED, params.ssl_options.context.verify_mode)
+        subjects = [dict(x[0] for x in cert["subject"]) for cert in params.ssl_options.context.get_ca_certs()]
+        self.assertIn({"commonName": "test CA"}, subjects)
+
     def test_the_local_default_is_unchanged(self):
         params = broker.connection_parameters({})
         self.assertEqual(("localhost", 5672), (params.host, params.port))

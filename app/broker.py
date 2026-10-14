@@ -58,8 +58,13 @@ def connection_parameters(env: dict | None = None) -> pika.ConnectionParameters:
         "blocked_connection_timeout": 300,
     }
     if read("SPRING_RABBITMQ_SSL_ENABLED", "false").lower() == "true":
-        context = ssl.create_default_context()
-        options["ssl_options"] = pika.SSLOptions(context, server_hostname=host)
+        # A private CA (the dev broker's) is trusted when the deployment names its file; the name the
+        # certificate is checked against may differ from the address dialled — the GPU host reaches
+        # broker-dev.orazaka.com through a local tunnel end (SPRING_RABBITMQ_SSL_SERVER_NAME).
+        cafile = source.get("SPRING_RABBITMQ_SSL_CA_FILE") or None
+        context = ssl.create_default_context(cafile=cafile)
+        server_name = read("SPRING_RABBITMQ_SSL_SERVER_NAME", host)
+        options["ssl_options"] = pika.SSLOptions(context, server_hostname=server_name)
     return pika.ConnectionParameters(**options)
 
 
