@@ -8,6 +8,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -123,6 +124,28 @@ class TestModelRouting(unittest.TestCase):
             ours = {(f["path"], f["sha256"], f["bytes"]) for f in spec["files"]}
             theirs = {(f["path"], f["sha256"], f["bytes"]) for f in cli[name]["files"]}
             self.assertEqual(theirs, ours, name)
+
+
+class TestTheStudioOffersWhatTheCatalogueAndThisWorkerKnow(unittest.TestCase):
+    """A model a Studio's form offers is a catalogue row AND a model this worker runs — or the
+    choice is a promise nobody keeps. The form lists names (a pack is data); this checks them."""
+
+    def test_every_offered_video_model_exists_on_both_sides(self):
+        workspace = _workspace_root()
+        if workspace is None:
+            self.skipTest("the blueprint and the catalogue live in the Orazaka workspace")
+        blueprint = json.loads((workspace / "orazaka-packs" / "orazaka-media" / "studios" / "video-generation" / "blueprint.json").read_text())
+        offered = blueprint["inputSchema"]["properties"].get("model", {}).get("enum")
+        if not offered:
+            self.skipTest("this blueprint offers no model list yet")
+        seed = (workspace / "orazaka-apps" / "services" / "orazaka-job-service" / "infra" / "initdb" / "30-jobs-config.sql").read_text()
+        registry = _main().MODEL_REGISTRY
+        for name in offered:
+            self.assertRegex(seed, rf"\('{re.escape(name)}', '[^']+', 'video'", f"{name} is not a video row of the catalogue")
+            self.assertIn(name, registry, f"{name} is not a model this worker runs")
+        aspects = blueprint["inputSchema"]["properties"].get("aspect", {}).get("enum", [])
+        for aspect in aspects:
+            self.assertEqual(aspect, video_models.normalise_aspect(aspect))
 
 
 class TestSdServerLine(unittest.TestCase):
