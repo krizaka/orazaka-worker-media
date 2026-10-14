@@ -402,7 +402,14 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 req_height = payload.get("height")
 
                 # MLX models: minimum 16 frames for cinematic output (4.0s at 4fps)
-                is_mlx_model = model_name.startswith("mlx-") or model_name.startswith("mlx-community/") or model_name == "ByteDance/AnimateDiff-Lightning"
+                # The text-to-video AnimateDiff pipeline, by the family the registry declares — the
+                # catalogue default `animatediff-lightning-mps` used to fall through to SVD's
+                # image-to-video branch from a grey still (orazaka-worker-media#3).
+                is_mlx_model = (
+                    family in ("AnimateDiff", "MLX-AnimateDiff", "MLX-AnimateDiff-Lightning")
+                    or model_name.startswith("mlx-")
+                    or model_name.startswith("mlx-community/")
+                )
                 min_frames = 16 if is_mlx_model else 14
                 frames_n = max(min_frames, min(int(duration * fps_render), 30))
 

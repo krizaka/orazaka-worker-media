@@ -219,6 +219,18 @@ class TestWanThroughTheHttpPipeline(unittest.TestCase):
         self.assertEqual((480, 832), (self.calls[0]["width"], self.calls[0]["height"]))
         self.assertEqual("wan2.1-t2v-1.3b", body["metrics"]["model"])
 
+    def test_the_mac_default_runs_animatediff_not_svd(self):
+        """orazaka-worker-media#3: `animatediff-lightning-mps` took SVD's image-to-video branch."""
+        out = os.path.join(tempfile.gettempdir(), "orz-test", "video.mp4")
+        frame = MagicMock()
+        frame.size = (432, 768)
+        with patch.object(self.main, "generate_video_frames_mlx", return_value=[frame] * 16) as animatediff, \
+                patch.object(self.main, "generate_video_frames") as svd:
+            status, body = self._post({"prompt": "x", "model": "animatediff-lightning-mps", "aspect": "9:16", "output_path": out})
+        self.assertEqual(200, status, body)
+        svd.assert_not_called()
+        self.assertEqual((432, 768), (animatediff.call_args.kwargs["width"], animatediff.call_args.kwargs["height"]))
+
     def test_an_aspect_the_model_cannot_make_is_a_400(self):
         status, _ = self._post({"prompt": "x", "model": "wan2.2-ti2v-5b", "aspect": "4:3"})
         self.assertEqual(400, status)
