@@ -1,0 +1,86 @@
+# The CUDA image of the media worker (Dockerfile.cuda, ADR-077), published to GHCR for the GPU host:
+#   ghcr.io/krizaka/orazaka-worker-media:cuda-<short sha>  and  :cuda-latest (main only)
+# A pull request builds it and checks it (imports, sd-server links) without pushing; main and v* tags push.
+# Built on a runner without a GPU: what can be proven here is that it builds, that every Python module
+# imports against the pinned stack, and that sd-server needs nothing but the host's driver.
+name: Image (CUDA)
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - Dockerfile.cuda
+      - requirements-cuda.txt
+      - models.yaml
+      - app/**
+      - .github/workflows/image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cuda:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/krizaka/orazaka-worker-media
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Make room (the CUDA toolchain and torch need ~25 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          docker system prune -af >/dev/null
+          df -h /
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.cuda
+          load: true
+          tags: ${{ env.IMAGE }}:ci
+          cache-from: type=gha,scope=cuda
+          cache-to: type=gha,mode=min,scope=cuda
+
+      - name: Check — the worker imports against the pinned stack
+        run: |
+          docker run --rm "$IMAGE:ci" python -c "
+          import diffusers, transformers, torch
+          from diffusers import WanPipeline, AutoencoderKLWan
+          from transformers import UMT5EncoderModel
+          import app.consumer, app.main, app.fetch_models, app.wan_generator
+          print('torch', torch.__version__, 'cuda', torch.version.cuda, 'diffusers', diffusers.__version__, 'transformers', transformers.__version__)
+          print('profiles', app.fetch_models.plan('big')['hf'])
+          "
+
+      - name: Check — sd-server needs only the host's driver
+        run: |
+          missing=$(docker run --rm --entrypoint sh "$IMAGE:ci" -c "ldd /usr/local/bin/sd-server | grep 'not found' | grep -v 'libcuda.so' || true")
+          if [ -n "$missing" ]; then echo "sd-server is missing libraries: $missing"; exit 1; fi
+          echo "sd-server links (libcuda comes from the GPU host's driver)"
+
+      - name: Push
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          short=$(git rev-parse --short=7 HEAD)
+          docker tag "$IMAGE:ci" "$IMAGE:cuda-$short"
+          docker push "$IMAGE:cuda-$short"
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            docker tag "$IMAGE:ci" "$IMAGE:cuda-latest"
+            docker push "$IMAGE:cuda-latest"
+          fi
+          echo "pushed $IMAGE:cuda-$short" >> "$GITHUB_STEP_SUMMARY"

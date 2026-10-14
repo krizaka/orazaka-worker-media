@@ -21,9 +21,11 @@ try:
 except ImportError:
     torch = None
 
+from app import video_models
 from app.encoder import export_frames_to_video
 from app.generator import generate_video_frames
 from app.telemetry import resource_guard, send_progress_update
+from app.wan_generator import generate_wan_frames
 
 try:
     from app.mlx_generator import generate_video_frames_mlx
@@ -40,6 +42,9 @@ MODEL_REGISTRY: Dict[str, str] = {
     # MLX Community HuggingFace models
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "MLX-FLUX-Schnell",
     "ByteDance/AnimateDiff-Lightning": "MLX-AnimateDiff-Lightning",
+    # Wan 2.x on CUDA (diffusers) — the 9:16 clips of the GPU droplet (models.yaml, ADR-077).
+    "wan2.2-ti2v-5b": "Wan",
+    "wan2.1-t2v-1.3b": "Wan",
 }
 
 # ── Host-memory guard (per user mandate) ──────────────────────────────────────
@@ -56,6 +61,9 @@ MODEL_MEMORY_GB: Dict[str, int] = {
     "mlx-stable-diffusion-video": 8,
     "apple-coreml-video-pipeline": 4,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 6,
+    # Host RAM, not VRAM: what the offloaded components occupy while the card runs the rest.
+    "wan2.2-ti2v-5b": 24,
+    "wan2.1-t2v-1.3b": 16,
 }
 _DEFAULT_MODEL_GB = 12  # conservative estimate for unregistered models
 
@@ -255,6 +263,38 @@ def _record_consumption(metrics, frames, steps, fps, req_width, req_height) -> N
         print(f"Failed to record consumption metrics: {e}", flush=True)
 
 
+def _gpu_name() -> str | None:
+    """The accelerator this host ran on, for the facts kept with a clip."""
+    try:
+        if torch is not None and torch.cuda.is_available():
+            return str(torch.cuda.get_device_name(0))
+        if torch is not None and torch.backends.mps.is_available():
+            return "Apple Silicon (Metal)"
+    except Exception:  # noqa: BLE001 — a name is a fact for a caption, never worth a failed render
+        return None
+    return None
+
+
+def _record_provenance(metrics, model_name, seed, aspect, frames, fps) -> None:
+    """How a clip was made, kept with it: what a caption, a re-run or a cost report needs.
+
+    ``durationSeconds`` is the duration PRODUCED (frames / fps), which is what OUTPUT_SECOND bills —
+    never the duration asked for, which Wan rounds to its 4k+1 frame grid.
+    """
+    metrics["model"] = model_name
+    metrics["seed"] = str(seed)
+    if aspect:
+        metrics["aspect"] = video_models.normalise_aspect(aspect)
+    gpu = _gpu_name()
+    if gpu:
+        metrics["gpu"] = gpu
+    try:
+        if frames and fps:
+            metrics["durationSeconds"] = round(len(frames) / float(fps), 2)
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass
+
+
 class VideoInferenceHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == '/':
@@ -278,7 +318,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
         except Exception:
             payload = {}
 
-        model_name = payload.get("model", "animatediff-lightning-mps")
+        model_name = payload.get("model") or video_models.default_model_name()
         if model_name not in MODEL_REGISTRY:
             self.send_response(400)
             self.send_header('Content-Type', 'application/json')
@@ -290,7 +330,8 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
         input_image = load_image(payload)
         try:
             with _media_semaphore, resource_guard(process) as metrics:
-                seed_str = os.environ.get("ORAZAKA_VIDEO_GEN_SEED", "-1")
+                # The caller's seed first, so a clip can be made again; then the deployment's.
+                seed_str = str(payload.get("seed") or os.environ.get("ORAZAKA_VIDEO_GEN_SEED", "-1"))
                 try:
                     seed_val = int(seed_str)
                 except ValueError:
@@ -304,7 +345,8 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 generator = torch.manual_seed(seed_val) if torch else None
                 job_id = payload.get("job_id")
                 
-                model_name = payload.get("model", "animatediff-lightning-mps")
+                model_name = payload.get("model") or video_models.default_model_name()
+                family = MODEL_REGISTRY[model_name]
 
                 # Host-memory preflight: refuse oversized models BEFORE loading any
                 # weights, so SVD-XT fails fast/clean on a 64GB Mac instead of
@@ -313,6 +355,19 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
 
                 steps = payload.get("videoSteps") or payload.get("video_steps")
                 fps_render = payload.get("videoFps") or payload.get("video_fps")
+
+                wan = video_models.find(model_name) if family == "Wan" else None
+                if wan is not None and payload.get("image"):
+                    # Text-to-video only: a starting image would be silently ignored, and a run
+                    # that ignores what it was given is not the run that was asked for (§12).
+                    raise video_models.InvalidVideoRequest(
+                        f"model '{model_name}' makes video from text only; leave the starting "
+                        "image empty or choose an image-to-video model"
+                    )
+                if not steps and wan is not None:
+                    steps = wan.steps
+                if not fps_render and wan is not None:
+                    fps_render = wan.fps
 
                 if not steps:
                     model_lower = model_name.lower()
@@ -347,7 +402,14 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 req_height = payload.get("height")
 
                 # MLX models: minimum 16 frames for cinematic output (4.0s at 4fps)
-                is_mlx_model = model_name.startswith("mlx-") or model_name.startswith("mlx-community/") or model_name == "ByteDance/AnimateDiff-Lightning"
+                # The text-to-video AnimateDiff pipeline, by the family the registry declares — the
+                # catalogue default `animatediff-lightning-mps` used to fall through to SVD's
+                # image-to-video branch from a grey still (orazaka-worker-media#3).
+                is_mlx_model = (
+                    family in ("AnimateDiff", "MLX-AnimateDiff", "MLX-AnimateDiff-Lightning")
+                    or model_name.startswith("mlx-")
+                    or model_name.startswith("mlx-community/")
+                )
                 min_frames = 16 if is_mlx_model else 14
                 frames_n = max(min_frames, min(int(duration * fps_render), 30))
 
@@ -356,7 +418,33 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 if explicit_frames and int(explicit_frames) > 0:
                     frames_n = int(explicit_frames)
 
-                if model_name.startswith("argmaxinc/"):
+                # The Studio's aspect ("9:16" by default) picks one of the sizes the model was
+                # trained at; an explicit width and height still win (models.yaml, ADR-077).
+                shaped = wan
+                if shaped is None and payload.get("aspect"):
+                    shaped = video_models.video_models().get(model_name)
+                if shaped is not None:
+                    req_width, req_height = shaped.size_for(
+                        payload.get("aspect"), req_width, req_height
+                    )
+                if wan is not None:
+                    frames_n = wan.frames_for(duration)
+                    if explicit_frames and int(explicit_frames) > 0:
+                        frames_n = min(int(explicit_frames), wan.max_frames)
+
+                if wan is not None:
+                    frames = generate_wan_frames(
+                        model_name=model_name,
+                        prompt=payload.get("prompt", ""),
+                        width=int(req_width),
+                        height=int(req_height),
+                        num_frames=frames_n,
+                        steps=int(steps),
+                        seed=seed_val,
+                        negative_prompt=payload.get("negativePrompt") or None,
+                        progress_callback=progress_cb,
+                    )
+                elif model_name.startswith("argmaxinc/"):
                     # FLUX image generation via mflux (MLX native)
                     frames = _generate_flux_image(
                         prompt=payload.get("prompt", ""),
@@ -390,6 +478,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                     )
 
                 _record_consumption(metrics, frames, steps, fps_render, req_width, req_height)
+                _record_provenance(metrics, model_name, seed_val, payload.get("aspect"), frames, fps_render)
 
                 output_path = payload.get("output_path")
                 if output_path:
@@ -421,6 +510,12 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             self.wfile.write(body.encode('utf-8'))
+        except video_models.InvalidVideoRequest as bad:
+            print(f"Refused video request: {bad}", flush=True)
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(bad)}).encode('utf-8'))
         except Exception as e:
             print(f"Error during video generation: {e}", flush=True)
             self.send_response(500)

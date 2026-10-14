@@ -8,7 +8,7 @@
 [project]
 name = "orazaka-worker-media"
 version = "1.0.0"
-description = "Native macOS media worker — MLX image/video generation and ffmpeg composition."
+description = "Media worker — Wan 2.x 9:16 video on CUDA, MLX/Metal on the Mac, ffmpeg composition."
 requires-python = ">=3.11"
 
 [tool.ruff]
