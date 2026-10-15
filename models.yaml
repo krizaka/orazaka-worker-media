@@ -61,7 +61,7 @@ video:
   # it too: SD 1.5 sizes, multiples of 8.
   animatediff-lightning-mps:
     label: "AnimateDiff Lightning (MPS)"
-    licence: Apache-2.0
+    licence: CreativeML OpenRAIL-M
     pipeline: animatediff
     fps: 12
     maxFrames: 16

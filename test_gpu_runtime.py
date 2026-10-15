@@ -102,7 +102,8 @@ class TestModelRouting(unittest.TestCase):
     def test_every_wan_model_is_pinned_and_licensed_for_commercial_use(self):
         manifest = video_models.load_manifest()
         for name, spec in manifest["video"].items():
-            self.assertIn(spec["licence"], {"Apache-2.0", "MIT"}, name)
+            # OpenRAIL-M permits commercial use (with use restrictions): AnimateDiff Lightning's card says so.
+            self.assertIn(spec["licence"], {"Apache-2.0", "MIT", "CreativeML OpenRAIL-M"}, name)
             if spec["pipeline"] == "wan":
                 self.assertRegex(spec["revision"], r"^[0-9a-f]{40}$", name)
 
