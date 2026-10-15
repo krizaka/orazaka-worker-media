@@ -22,6 +22,7 @@ import time
 import urllib.error
 import urllib.request
 
+from app import spend
 from app.video_models import VideoModel
 
 DEFAULT_URL = "https://inference.do-ai.run"
@@ -93,6 +94,10 @@ def generate(
     """Submits, waits and downloads one clip. Returns the MP4 bytes and the facts about the call."""
     key = api_key(env)
     base = base_url(env)
+    try:
+        spend.reserve(model.cost_usd if model.cost_usd is not None else 0.60, env)
+    except spend.SpendRefused as refused:
+        raise RemoteVideoError(str(refused)) from refused
     started = clock()
     _, raw = call("POST", f"{base}/v1/videos", key, request_body(model, prompt, width, height, seed))
     job = json.loads(raw.decode("utf-8") or "{}")

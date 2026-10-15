@@ -22,7 +22,7 @@ class Recorder:
         return status, payload if isinstance(payload, bytes) else json.dumps(payload).encode()
 
 
-ENV = {"AI_INFERENCE_KEY": "k-test", "AI_INFERENCE_URL": "https://provider.test"}
+ENV = {"AI_INFERENCE_KEY": "k-test", "AI_INFERENCE_URL": "https://provider.test", "AI_VIDEO_DAILY_RUNS": "-1", "AI_SPEND_DAILY_BUDGET_USD": "-1"}
 
 
 class TestCatalogue(unittest.TestCase):
