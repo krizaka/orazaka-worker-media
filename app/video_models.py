@@ -70,6 +70,11 @@ class VideoModel:
     vram_gb: int = 0
     ram_gb: int = 0
     hardware: tuple = ()
+    #: A model served by a provider rather than run here (``pipeline: remote``): its id there, the provider's
+    #: name in the catalogue, and what a clip costs (USD, from the provider's pricing page).
+    remote_model: str | None = None
+    provider: str | None = None
+    cost_usd: float | None = None
 
     def size_for(self, aspect: str | None, width=None, height=None) -> tuple[int, int]:
         """The frame size for an aspect, or for an explicit width and height.
@@ -152,6 +157,9 @@ def video_models(manifest: dict | None = None) -> dict[str, VideoModel]:
             vram_gb=int(spec.get("vramGb", 0)),
             ram_gb=int(spec.get("ramGb", 0)),
             hardware=tuple(spec.get("hardware") or ()),
+            remote_model=spec.get("remoteModel"),
+            provider=spec.get("provider"),
+            cost_usd=float(spec["costUsd"]) if spec.get("costUsd") is not None else None,
         )
     return models
 

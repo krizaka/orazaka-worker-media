@@ -21,7 +21,7 @@ try:
 except ImportError:
     torch = None
 
-from app import video_models
+from app import remote_video, video_models
 from app.encoder import export_frames_to_video
 from app.generator import generate_video_frames
 from app.telemetry import resource_guard, send_progress_update
@@ -45,6 +45,8 @@ MODEL_REGISTRY: Dict[str, str] = {
     # Wan 2.x on CUDA (diffusers) — the 9:16 clips of the GPU droplet (models.yaml, ADR-077).
     "wan2.2-ti2v-5b": "Wan",
     "wan2.1-t2v-1.3b": "Wan",
+    # Served by a provider, routed by Orazaka (app/remote_video.py): nothing runs on this host.
+    "wan2-2-t2v-a14b": "Remote",
 }
 
 # ── Host-memory guard (per user mandate) ──────────────────────────────────────
@@ -295,7 +297,76 @@ def _record_provenance(metrics, model_name, seed, aspect, frames, fps) -> None:
         pass
 
 
+def _write_inside_uploads(path: str, data: bytes) -> str:
+    """Writes a clip under the upload root, and nowhere else (the provider's bytes are the only thing written)."""
+    real = os.path.realpath(path)
+    for root in _upload_roots():
+        if real.startswith(root + os.sep):
+            os.makedirs(os.path.dirname(real), exist_ok=True)
+            with open(real, "wb") as out:
+                out.write(data)
+            return real
+    raise PermissionError(f"Access to path '{path}' is denied (outside the upload directory).")
+
+
+def run_remote(payload: Dict[str, Any], model_name: str, process=None, generate=remote_video.generate) -> Dict[str, Any]:
+    """One clip from a provider-served model, as the response body of the pipeline.
+
+    The shape is what Wan on a GPU gives (aspect → size, seed, metering, provenance); only the pixels come
+    from elsewhere, and ``metrics.provider`` says so.
+    """
+    model = video_models.find(model_name)
+    if payload.get("image") or payload.get("image_path"):
+        raise video_models.InvalidVideoRequest(
+            f"model '{model_name}' makes video from text only; leave the starting image empty"
+        )
+    prompt = (payload.get("prompt") or "").strip()
+    width, height = model.size_for(payload.get("aspect"), payload.get("width"), payload.get("height"))
+    seed_text = str(payload.get("seed") or os.environ.get("ORAZAKA_VIDEO_GEN_SEED", "-1"))
+    try:
+        seed_val = int(seed_text)
+    except ValueError:
+        seed_val = -1
+    job_id = payload.get("job_id")
+    with resource_guard(process) as metrics:
+        if job_id:
+            send_progress_update(job_id, 0)
+        progress = (lambda percent: send_progress_update(job_id, percent)) if job_id else None
+        video, facts = generate(model, prompt, width, height, seed_val if seed_val >= 0 else None, progress=progress)
+        metrics.update(facts)
+        metrics["model"] = model_name
+        metrics["seed"] = str(seed_val) if seed_val >= 0 else "provider"
+        metrics["aspect"] = video_models.normalise_aspect(payload.get("aspect"))
+        metrics["width"], metrics["height"], metrics["fps"] = width, height, model.fps
+        output_path = payload.get("output_path")
+        if not output_path:
+            return {"data": [{"b64_json": base64.b64encode(video).decode("ascii")}], "metrics": metrics}
+        safe_output_path = _write_inside_uploads(validate_safe_path(output_path), video)
+        measured = remote_video.probe_duration(safe_output_path)
+        if measured:
+            metrics["durationSeconds"] = measured
+        if job_id:
+            send_progress_update(job_id, 100)
+        return {"status": "success", "output_path": safe_output_path, "metrics": metrics}
+
+
 class VideoInferenceHandler(BaseHTTPRequestHandler):
+    def _serve_remote(self, payload: Dict[str, Any], model_name: str, process) -> None:
+        try:
+            with _media_semaphore:
+                body = json.dumps(run_remote(payload, model_name, process))
+            status, content = 200, body.encode("utf-8")
+        except video_models.InvalidVideoRequest as bad:
+            status, content = 400, json.dumps({"error": str(bad)}).encode("utf-8")
+        except Exception as failure:  # §12: the provider's refusal or failure is the job's failure
+            print(f"Error during remote video generation: {failure}", flush=True)
+            status, content = 500, str(failure).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
     def do_GET(self) -> None:
         if self.path == '/':
             self.send_response(200)
@@ -327,6 +398,9 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
             return
 
         process = psutil.Process(os.getpid()) if psutil else None
+        if MODEL_REGISTRY[model_name] == "Remote":
+            self._serve_remote(payload, model_name, process)
+            return
         input_image = load_image(payload)
         try:
             with _media_semaphore, resource_guard(process) as metrics:

@@ -57,6 +57,29 @@ video:
     downloadGb: 6.2
     hardware: [cuda]
 
+  # Wan 2.2 T2V A14B — served by DigitalOcean serverless inference, routed by Orazaka (app/remote_video.py):
+  # the catalogue row points at the provider `do-inference`, the clip is made there, and the run, its seed, its
+  # metering and its sealed asset are Orazaka's. Nothing is downloaded or run on this host. 5 s per clip.
+  wan2-2-t2v-a14b:
+    label: "Wan 2.2 T2V A14B (DigitalOcean serverless)"
+    licence: Apache-2.0
+    licenceUrl: https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B
+    pipeline: remote
+    provider: do-inference
+    remoteModel: wan2-2-t2v-a14b
+    costUsd: 0.60            # per video, docs.digitalocean.com/products/inference/details/pricing
+    fps: 16
+    maxFrames: 81
+    steps: 0                 # the provider's own
+    multiple: 16
+    # Measured 2026-10-15 through the gateway: whatever `size` is asked (720x1280, 480x832, 1280x720) and with or
+    # without aspect_ratio/resolution, the clip is 832x480, 81 frames, 5.06 s @ 16 fps — so that is the only
+    # shape declared. A 9:16 request is refused by name rather than answered with a landscape clip. Seeds are
+    # honoured: the same prompt and seed gave byte-identical frames across four calls.
+    sizes:
+      "16:9": [832, 480]
+    hardware: [remote]
+
   # The Mac's model (Metal), served by app/mlx_generator.py. Listed so the aspect of a Studio reaches
   # it too: SD 1.5 sizes, multiples of 8.
   animatediff-lightning-mps:

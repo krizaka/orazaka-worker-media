@@ -49,6 +49,8 @@ class TestAspect(unittest.TestCase):
 
     def test_every_model_makes_a_vertical_short_taller_than_wide(self):
         for model in video_models.video_models().values():
+            if model.pipeline == "remote":
+                continue  # a provider's shapes are measured, not chosen (test_remote_video.py)
             width, height = model.size_for("9:16")
             self.assertGreater(height, width, model.name)
             self.assertEqual(0, width % model.multiple, model.name)
