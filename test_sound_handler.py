@@ -149,3 +149,26 @@ def test_the_sound_queue_is_consumed_only_where_the_host_says_so():
 def test_a_sound_only_process_does_not_drain_the_shared_queue():
     assert consumer.sound_only({"MEDIA_WORKER_ONLY_SOUND": "true"})
     assert not consumer.sound_only({}) and not consumer.sound_only({"MEDIA_WORKER_ONLY_SOUND": "no"})
+
+
+def test_a_published_clip_is_read_only_from_the_platforms_cdn(monkeypatch, tmp_path):
+    seen = []
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self, n=-1):
+            return b"mp4-bytes"
+
+    monkeypatch.setattr(consumer.urllib.request, "urlopen", lambda url, timeout=0: seen.append(url) or Reply())
+    ok = consumer._fetch_published("https://krizaka-assets.b-cdn.net/site/products/orazaka/gallery-video/tea-pour.c41.mp4", str(tmp_path))
+    assert ok and open(ok, "rb").read() == b"mp4-bytes"
+    for bad in ("http://krizaka-assets.b-cdn.net/x.mp4", "https://evil.example/x.mp4",
+                "https://krizaka-assets.b-cdn.net@evil.example/x.mp4", "https://u:p@krizaka-assets.b-cdn.net/x.mp4",
+                "file:///etc/passwd"):
+        assert consumer._fetch_published(bad, str(tmp_path)) is None
+    assert len(seen) == 1
