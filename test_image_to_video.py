@@ -155,6 +155,43 @@ class TestHandOver(unittest.TestCase):
         self.assertEqual(b"\xff\xd8jpeg", open(got, "rb").read())
         shutil.rmtree(scratch)
 
+    def test_a_studio_step_names_its_photo_by_asset_id_and_the_droplet_asks_for_that_asset(self):
+        import app.consumer as consumer
+        from app import asset_sink
+
+        scratch = tempfile.mkdtemp(prefix="orz-i2v-")
+        asset = "11111111-1111-1111-1111-111111111111"
+        response = MagicMock()
+        response.read.return_value = b"photo"
+        response.__enter__.return_value = response
+        with patch.dict(os.environ, {"MEDIA_ASSET_SINK_URL": "http://core:8090"}), patch.object(
+            asset_sink, "_service_token", return_value="tok"
+        ), patch.object(asset_sink.urllib.request, "urlopen", return_value=response) as opened:
+            consumer._starting_image({"jobId": "j-2", "userId": "u-1"}, {"image": asset}, scratch)
+        self.assertEqual(
+            f"http://core:8090/internal/v1/jobs/j-2/input/image?asset={asset}", opened.call_args.args[0].full_url
+        )
+        shutil.rmtree(scratch)
+
+    def test_where_the_disk_is_shared_the_asset_id_is_resolved_for_its_owner_only(self):
+        import app.consumer as consumer
+
+        root = tempfile.mkdtemp(prefix="orz-up-")
+        asset = "22222222-2222-2222-2222-222222222222"
+        os.makedirs(os.path.join(root, "u-1", "temp"))
+        mine = os.path.join(root, "u-1", "temp", asset + ".png")
+        photo(16, 16).save(mine)
+        scratch = tempfile.mkdtemp(prefix="orz-i2v-")
+        env = {k: v for k, v in os.environ.items() if k != "MEDIA_ASSET_SINK_URL"}
+        with patch.dict(os.environ, env, clear=True), patch.object(consumer, "_upload_root", return_value=root):
+            self.assertEqual(
+                os.path.realpath(mine),
+                os.path.realpath(consumer._starting_image({"userId": "u-1"}, {"image": asset}, scratch)),
+            )
+            with self.assertRaises(consumer.InvalidJobPayload):
+                consumer._starting_image({"userId": "u-2"}, {"image": asset}, scratch)
+        shutil.rmtree(scratch)
+
     def test_a_blank_image_is_none_and_a_named_unreadable_one_is_refused(self):
         import app.consumer as consumer
 

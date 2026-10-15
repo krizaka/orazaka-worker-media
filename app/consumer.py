@@ -26,6 +26,7 @@ capability this worker was never bound to never arrives.
 import functools
 import json
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -160,6 +161,10 @@ def _requested_model(payload: dict, job: dict):
     return None
 
 
+# An uploaded asset's id: a UUID, and nothing else is mistaken for one.
+_ASSET_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
 def _starting_image(job: dict, payload: dict, scratch: str):
     """A readable file of the photo a clip starts from, or ``None`` when the job names none.
 
@@ -174,9 +179,16 @@ def _starting_image(job: dict, payload: dict, scratch: str):
     )
     if not named:
         return None
+    # A Studio step is dispatched straight to this worker: it names the uploaded asset by id, which
+    # nobody resolved. A job the platform's listener archived carries the resolved path instead.
+    asset = named if _ASSET_ID.fullmatch(named) else None
     if asset_sink.sink_url() is not None:
-        return asset_sink.fetch_image(job, os.path.join(scratch, "starting-image"))
-    if os.path.isabs(named) and os.path.isfile(named):
+        return asset_sink.fetch_image(job, os.path.join(scratch, "starting-image"), asset=asset)
+    if asset:
+        found = _resolve_owned_asset(_upload_root(), str(job.get("userId") or ""), asset)
+        if found:
+            return _materialise(found, scratch)
+    elif os.path.isabs(named) and os.path.isfile(named):
         return _materialise(named, scratch)
     # Named but not there: a run that quietly ignored its photo is not the run that was asked for (§12).
     raise InvalidJobPayload("the starting image the job names is not readable on this host")
