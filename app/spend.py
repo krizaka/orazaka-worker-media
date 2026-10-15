@@ -15,7 +15,7 @@ import os
 import tempfile
 import threading
 
-log = logging.getLogger("orazaka.worker.spend")
+log = logging.getLogger(__name__)
 _lock = threading.Lock()
 
 DEFAULT_DAILY_RUNS = 5
