@@ -297,6 +297,18 @@ def _record_provenance(metrics, model_name, seed, aspect, frames, fps) -> None:
         pass
 
 
+def _write_inside_uploads(path: str, data: bytes) -> str:
+    """Writes a clip under the upload root, and nowhere else (the provider's bytes are the only thing written)."""
+    real = os.path.realpath(path)
+    for root in _upload_roots():
+        if real.startswith(root + os.sep):
+            os.makedirs(os.path.dirname(real), exist_ok=True)
+            with open(real, "wb") as out:
+                out.write(data)
+            return real
+    raise PermissionError(f"Access to path '{path}' is denied (outside the upload directory).")
+
+
 def run_remote(payload: Dict[str, Any], model_name: str, process=None, generate=remote_video.generate) -> Dict[str, Any]:
     """One clip from a provider-served model, as the response body of the pipeline.
 
@@ -329,10 +341,7 @@ def run_remote(payload: Dict[str, Any], model_name: str, process=None, generate=
         output_path = payload.get("output_path")
         if not output_path:
             return {"data": [{"b64_json": base64.b64encode(video).decode("ascii")}], "metrics": metrics}
-        safe_output_path = validate_safe_path(output_path)
-        os.makedirs(os.path.dirname(safe_output_path), exist_ok=True)
-        with open(safe_output_path, "wb") as out:
-            out.write(video)
+        safe_output_path = _write_inside_uploads(validate_safe_path(output_path), video)
         measured = remote_video.probe_duration(safe_output_path)
         if measured:
             metrics["durationSeconds"] = measured
