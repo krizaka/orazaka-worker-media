@@ -25,7 +25,7 @@ from app import remote_video, video_models
 from app.encoder import export_frames_to_video
 from app.generator import generate_video_frames
 from app.telemetry import resource_guard, send_progress_update
-from app.wan_generator import generate_wan_frames
+from app.wan_generator import generate_wan_frames, is_resident
 
 try:
     from app.mlx_generator import generate_video_frames_mlx
@@ -457,7 +457,11 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 # Host-memory preflight: refuse oversized models BEFORE loading any
                 # weights, so SVD-XT fails fast/clean on a 64GB Mac instead of
                 # swapping/freezing the host (§12: honest failure, never fake output).
-                preflight_memory_guard(model_name)
+                # A Wan pipeline already loaded in this process has paid for its memory: the guard
+                # measures what is FREE, and would refuse the second clip because the first one's
+                # pipeline is resident (found on the GPU droplet: every clip after the first failed).
+                if not is_resident(model_name, _asked_for_an_image(payload)):
+                    preflight_memory_guard(model_name)
 
                 steps = payload.get("videoSteps") or payload.get("video_steps")
                 fps_render = payload.get("videoFps") or payload.get("video_fps")
