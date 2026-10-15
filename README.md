@@ -90,3 +90,7 @@ in the workspace is normative; the local [AGENTS.md](AGENTS.md) only scopes it t
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+---
+
+<sub>A Krizaka product · [krizaka.com](https://www.krizaka.com) · Apache-2.0</sub>
