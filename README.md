@@ -49,6 +49,7 @@ On the Mac, inference never runs in Docker (AGENTS.md §1): this worker runs on 
 |---|---|---|---|---|---|
 | `wan2.2-ti2v-5b` | Wan 2.2 TI2V 5B, text-to-video | Apache-2.0 | 704×1280 | 5 s @ 24 fps | `big` (48 GB) |
 | `wan2.1-t2v-1.3b` | Wan 2.1 T2V 1.3B, text-to-video | Apache-2.0 | 480×832 | 5 s @ 16 fps | `small` (20 GB), `big` |
+| `wan2-2-t2v-a14b` | Wan 2.2 T2V A14B, text-to-video, **served by DigitalOcean serverless inference and routed by Orazaka** (`app/remote_video.py`; nothing runs on this host) | Apache-2.0 | 720×1280 | ≈ 5 s @ 16 fps, $0.60/clip | `AI_INFERENCE_KEY` |
 | `flux-2-klein-4b` | FLUX.2 [klein] 4B via sd-server | Apache-2.0 | any size | image | both |
 
 `models.yaml` says how each model is fetched (pinned revisions, checksums) and shaped; the platform's catalogue
@@ -61,6 +62,7 @@ What the deployment declares (never assumed):
 |---|---|
 | `SPRING_RABBITMQ_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_SSL_ENABLED` | the broker and its login |
 | `SPRING_RABBITMQ_SSL_CA_FILE` / `_SSL_SERVER_NAME` | a private CA to trust, and the name the broker's certificate is checked against when the address dialled is a tunnel end |
+| `AI_INFERENCE_URL` / `AI_INFERENCE_KEY` | the serverless-inference provider (default `https://inference.do-ai.run`) and a model access key that lists `wan2-2-t2v-a14b`; only read for that model |
 | `MEDIA_GPU_PROFILE` | `big` or `small`: the host's default video model (`models.yaml` profiles) |
 | `MEDIA_VIDEO_DEFAULT_MODEL` | overrides that default |
 | `MEDIA_ASSET_SINK_URL` | the job service; outputs are handed to it (sealed there) instead of kept on this disk |
