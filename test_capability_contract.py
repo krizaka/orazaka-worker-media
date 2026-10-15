@@ -59,6 +59,7 @@ WORKER_YAML = Path(__file__).resolve().parent / "worker.yaml"
 #: the same discriminant it uses — not a second mapping keyed on a capability name.
 HANDLERS = {
     "job.compose.": ["app/consumer.py", "app/composer.py"],
+    "job.sound.": ["app/consumer.py"],
     # main.py is where a video job's payload is actually read — the first version of this contract
     # left it out and reported `durationSeconds` and `image` unread, which was the test being wrong
     # rather than the worker. A contract that names the wrong module is the transcription problem
@@ -78,7 +79,7 @@ CAPABILITY_ROW = re.compile(
 def _bindings() -> list[str]:
     """The routing keys this worker drains, from its own declaration."""
     declared = yaml.safe_load(WORKER_YAML.read_text())
-    return [binding.replace("*", "") for binding in declared["bindings"]]
+    return [binding.replace("*", "") for binding in declared["bindings"] + declared.get("optionalBindings", [])]
 
 
 def _declared_capabilities() -> list[tuple[str, str, dict]]:

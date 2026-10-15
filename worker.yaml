@@ -11,6 +11,10 @@ family: media
 bindings:
   - "job.video.*"
   - "job.compose.*"
+# Drained only where MEDIA_SOUND_ENABLED=true (the Mac, which holds the sound weights), on a queue of its own
+# (orazaka.jobs.sound): a GPU droplet draining orazaka.jobs.video never takes a sound job it cannot run.
+optionalBindings:
+  - "job.sound.*"
 version: "1.0.0"
 concurrency: 1
 

@@ -64,9 +64,18 @@ BINDINGS = DECLARATION["bindings"]
 # from a second consumer. Which binding means "compose" is still a property of the ROUTING KEY the
 # broker delivered under — never of a capability name (P4).
 COMPOSE_PREFIX = "job.compose."
-# Sound for a video (orazaka-packs#25) is also ffmpeg + a local model on this host, so it rides the same
-# queue, under its own routing key — told apart by the key, as above.
-SOUND_PREFIX = "job.compose.sound"
+# Sound for a video (orazaka-packs#25) is ffmpeg + a local model (MPS/CUDA weights of 15 GB the other hosts
+# of this worker do not have), so it has a queue of its own, consumed only where MEDIA_SOUND_ENABLED=true: a
+# GPU droplet that drains `orazaka.jobs.video` never takes a sound job it cannot run. Told apart by the key.
+SOUND_QUEUE = "orazaka.jobs.sound"
+SOUND_BINDINGS = ["job.sound.*"]
+_SERIAL = threading.Lock()   # one job at a time on this host, whichever queue it came from
+
+
+def sound_enabled(env: dict | None = None) -> bool:
+    return str((os.environ if env is None else env).get("MEDIA_SOUND_ENABLED", "")).strip().lower() == "true"
+
+SOUND_PREFIX = "job.sound."
 
 
 def _http_port() -> int:
@@ -525,11 +534,17 @@ def _dispatch(channel, method, properties, body) -> None:
     to start it again from zero. Prefetch is one, so there is never more than one such thread.
     """
     threading.Thread(
-        target=_on_message,
+        target=_serialised,
         args=(channel, method, properties, body),
         daemon=True,
         name="media-job",
     ).start()
+
+
+def _serialised(channel, method, properties, body) -> None:
+    """One job at a time on this host: a video render and a sound mix never share the accelerator."""
+    with _SERIAL:
+        _on_message(channel, method, properties, body)
 
 
 def _on_message(channel, method, properties, body) -> None:
@@ -619,6 +634,23 @@ def run_consumer() -> None:
 
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=VIDEO_QUEUE, on_message_callback=_dispatch)
+    if sound_enabled():
+        channel.queue_declare(
+            queue=SOUND_QUEUE,
+            durable=True,
+            arguments={
+                "x-max-length": max_length,
+                "x-overflow": "reject-publish",
+                "x-dead-letter-exchange": DLX_EXCHANGE,
+                "x-dead-letter-routing-key": SOUND_QUEUE,
+            },
+        )
+        for binding in SOUND_BINDINGS:
+            channel.queue_bind(queue=SOUND_QUEUE, exchange=JOBS_EXCHANGE, routing_key=binding)
+        channel.queue_declare(queue=SOUND_QUEUE + ".dlq", durable=True)
+        channel.queue_bind(queue=SOUND_QUEUE + ".dlq", exchange=DLX_EXCHANGE, routing_key=SOUND_QUEUE)
+        channel.basic_consume(queue=SOUND_QUEUE, on_message_callback=_dispatch)
+        print(f"[consumer] consuming {SOUND_QUEUE} ({' + '.join(SOUND_BINDINGS)})", flush=True)
     print(
         f"[consumer] consuming {VIDEO_QUEUE} ({' + '.join(BINDINGS)}) ({broker.describe(params)})",
         flush=True,

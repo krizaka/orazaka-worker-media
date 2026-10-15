@@ -87,9 +87,9 @@ def test_unknown_model_is_refused_by_name(world):
         consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4", "music": "x", "musicModel": "musicgen"}))
 
 
-def test_the_sound_binding_is_told_by_the_routing_key_and_precedes_compose():
-    assert consumer._is_sound("job.compose.sound") and not consumer._is_sound("job.compose.assemble")
-    assert consumer._is_compose("job.compose.sound")
+def test_the_sound_binding_is_told_by_the_routing_key():
+    assert consumer._is_sound("job.sound.generate") and not consumer._is_sound("job.compose.assemble")
+    assert not consumer._is_compose("job.sound.generate")
 
 
 def test_a_voice_over_alone_is_enough(world):
@@ -132,3 +132,11 @@ def test_asset_url_parsing_accepts_two_words_and_nothing_else():
     assert asset_sink.parse_asset_url("/api/v1/assets/abc-1/video.mp4") == ("abc-1", "video.mp4")
     for bad in ("/api/v1/assets/../x/video.mp4", "/api/v1/assets/a/b/c.mp4", "/uploads/u/j/output/v.mp4", ""):
         assert asset_sink.parse_asset_url(bad) is None
+
+
+def test_the_sound_queue_is_consumed_only_where_the_host_says_so():
+    assert consumer.sound_enabled({"MEDIA_SOUND_ENABLED": "true"})
+    assert not consumer.sound_enabled({})
+    assert not consumer.sound_enabled({"MEDIA_SOUND_ENABLED": "false"})
+    assert consumer.SOUND_QUEUE != consumer.VIDEO_QUEUE
+    assert "job.sound." + "*" not in consumer.BINDINGS   # the shared queue never binds it
