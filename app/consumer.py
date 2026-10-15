@@ -410,6 +410,42 @@ def _is_compose(routing_key: str) -> bool:
     return bool(routing_key) and routing_key.startswith(COMPOSE_PREFIX)
 
 
+#: Hosts a clip may be read from by https URL: the platform's own media CDN, not an arbitrary address (no SSRF).
+#: ``MEDIA_SOUND_INPUT_HOSTS`` (comma list) overrides.
+DEFAULT_INPUT_HOSTS = ("krizaka-assets.b-cdn.net",)
+MAX_INPUT_BYTES = 256 * 1024 * 1024
+
+
+def _input_hosts(env: dict | None = None) -> tuple:
+    raw = (os.environ if env is None else env).get("MEDIA_SOUND_INPUT_HOSTS", "")
+    hosts = tuple(h.strip().lower() for h in str(raw).split(",") if h.strip())
+    return hosts or DEFAULT_INPUT_HOSTS
+
+
+def _fetch_published(reference: str, scratch: str, env: dict | None = None):
+    """A published clip of the platform's media CDN (``https://<cdn host>/…``), saved into ``scratch``.
+
+    Only https, only the allow-listed hosts, bounded in size; anything else is *not found*.
+    """
+    from urllib.parse import urlparse
+
+    parts = urlparse(reference)
+    if parts.scheme != "https" or (parts.hostname or "").lower() not in _input_hosts(env) or parts.username:
+        return None
+    name = os.path.basename(parts.path) or "clip.mp4"
+    target = os.path.join(scratch, "published-" + "".join(c for c in name if c.isalnum() or c in "._-"))
+    try:
+        with urllib.request.urlopen(reference, timeout=120) as response:  # noqa: S310 — https + allow-listed host only
+            data = response.read(MAX_INPUT_BYTES + 1)
+    except OSError:
+        return None
+    if not data or len(data) > MAX_INPUT_BYTES:
+        return None
+    with open(target, "wb") as handle:
+        handle.write(data)
+    return target
+
+
 def _resolve_owned_output(upload_root: str, user_id: str, reference: str, scratch: str | None = None):
     """A file this actor's earlier step produced, named by the URL that step returned.
 
@@ -421,6 +457,8 @@ def _resolve_owned_output(upload_root: str, user_id: str, reference: str, scratc
     """
     if not reference or not user_id:
         return None
+    if reference.startswith("https://"):
+        return _fetch_published(reference, scratch or tempfile.mkdtemp(prefix="orz-in-"))
     owner_root = os.path.realpath(os.path.join(upload_root, user_id))
     asset = asset_sink.parse_asset_url(reference)
     if asset:
