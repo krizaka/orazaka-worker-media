@@ -98,3 +98,37 @@ def test_a_voice_over_alone_is_enough(world):
     _ff("-f", "lavfi", "-i", "sine=frequency=500:duration=2:sample_rate=22050", str(voice))
     result, _ = consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4", "voice": "/uploads/u1/jobA/output/voice.wav"}))
     assert result["metrics"]["tracks"] == ["voice"]
+
+
+def test_the_asset_url_of_an_earlier_step_resolves_to_the_actors_own_output(world):
+    root, _ = world
+    result, _ = consumer._sound(job({"video": "/api/v1/assets/jobA/video.mp4",
+                                     "music": "x"}))
+    assert result["url"].endswith("/video.mp4")
+
+
+def test_on_a_host_without_the_platform_disk_the_clip_is_read_back_from_the_job_service(world, monkeypatch, tmp_path):
+    root, _ = world
+    src = root / "u1" / "jobA" / "output" / "video.mp4"
+    seen = {}
+
+    def fake_fetch(job_id, filename, user_id, destination, env=None):
+        seen["args"] = (job_id, filename, user_id)
+        return str(src)
+
+    monkeypatch.setattr(consumer.asset_sink, "sink_url", lambda env=None: "http://core")
+    monkeypatch.setattr(consumer.asset_sink, "fetch", fake_fetch)
+    consumer._sound(job({"video": "/api/v1/assets/jobA/video.mp4", "music": "x"}))
+    assert seen["args"] == ("jobA", "video.mp4", "u1")
+
+
+def test_another_actors_asset_url_is_not_found(world):
+    with pytest.raises(consumer.InvalidJobPayload, match="not found"):
+        consumer._sound(job({"video": "/api/v1/assets/jobB/video.mp4", "music": "x"}))
+
+
+def test_asset_url_parsing_accepts_two_words_and_nothing_else():
+    from app import asset_sink
+    assert asset_sink.parse_asset_url("/api/v1/assets/abc-1/video.mp4") == ("abc-1", "video.mp4")
+    for bad in ("/api/v1/assets/../x/video.mp4", "/api/v1/assets/a/b/c.mp4", "/uploads/u/j/output/v.mp4", ""):
+        assert asset_sink.parse_asset_url(bad) is None

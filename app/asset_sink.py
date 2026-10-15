@@ -120,3 +120,49 @@ def fetch_image(job: dict, target: str, env: dict | None = None, asset: str | No
         handle.write(data)
     print(f"[asset-sink] {job['jobId']}: starting image of {len(data)} bytes fetched", flush=True)
     return target
+
+
+#: An asset URL as the platform serves it: ``/api/v1/assets/<jobId>/<file>``. Two words, never a path.
+_ASSET_URL = re.compile(r"^/api/v1/assets/([A-Za-z0-9-]{1,64})/([A-Za-z0-9][A-Za-z0-9._-]{0,99})$")
+
+
+def parse_asset_url(reference: str):
+    """``(jobId, filename)`` of an asset URL, or ``None`` when the reference is anything else."""
+    found = _ASSET_URL.match(reference or "")
+    return (found.group(1), found.group(2)) if found else None
+
+
+def fetch(job_id: str, filename: str, user_id: str, destination: str, env: dict | None = None) -> str | None:
+    """Reads back one output of the acting user's from the job service into ``destination``.
+
+    The job service answers only for the job's owner (``X-Orazaka-User-Id``); anyone else's is a 404, which
+    is returned as ``None`` — *not found*, like a file that does not exist.
+
+    Raises:
+        AssetSinkError: no sink or token, or the job service failed.
+    """
+    base = sink_url(env)
+    if base is None:
+        raise AssetSinkError("MEDIA_ASSET_SINK_URL is not set")
+    token = _service_token()
+    if not token:
+        raise AssetSinkError("no SERVICE token (ORAZAKA_SERVICE_TOKEN) to read the output")
+    request = urllib.request.Request(  # noqa: S310 — the deployment's own job service
+        f"{base}/internal/v1/jobs/{job_id}/output/{filename}",
+        method="GET",
+        headers={"Authorization": f"Bearer {token}", "X-Orazaka-User-Id": str(user_id or "")},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310 — see above
+            data = response.read()
+    except urllib.error.HTTPError as refused:
+        if refused.code == 404:
+            return None
+        raise AssetSinkError(f"the job service refused the read ({refused.code})") from refused
+    except OSError as unreachable:
+        raise ConnectionError(f"the job service is unreachable for the read: {unreachable}") from unreachable
+    os.makedirs(destination, exist_ok=True)
+    target = os.path.join(destination, f"{job_id}-{filename}")
+    with open(target, "wb") as handle:
+        handle.write(data)
+    return target

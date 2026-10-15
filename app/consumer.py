@@ -378,20 +378,29 @@ def _is_compose(routing_key: str) -> bool:
     return bool(routing_key) and routing_key.startswith(COMPOSE_PREFIX)
 
 
-def _resolve_owned_output(upload_root: str, user_id: str, reference: str):
+def _resolve_owned_output(upload_root: str, user_id: str, reference: str, scratch: str | None = None):
     """A file this actor's earlier step produced, named by the URL that step returned.
 
-    A Studio chains steps with ``{{steps.video.url}}``, which is ``/uploads/<user>/<job>/output/<file>`` —
-    not an asset id. Ownership is still the path: the reference must resolve, after symlinks, inside the
-    acting user's own directory. Another actor's output is *not found*, the same answer as one that never
-    existed. Anything else falls back to an asset id.
+    A Studio chains steps with ``{{steps.video.url}}``, which is ``/api/v1/assets/<job>/<file>`` (or, for a
+    worker sharing the platform's disk, ``/uploads/<user>/<job>/output/<file>``) — not an asset id.
+    Ownership is still the path or the job's row: the file must resolve, after symlinks, inside the acting
+    user's own directory, or the job service must say the actor owns that job. Another actor's output is
+    *not found*, the same answer as one that never existed. Anything else falls back to an asset id.
     """
     if not reference or not user_id:
         return None
-    if not reference.startswith("/uploads/"):
-        return _resolve_owned_asset(upload_root, user_id, reference)
     owner_root = os.path.realpath(os.path.join(upload_root, user_id))
-    found = os.path.realpath(os.path.join(upload_root, reference[len("/uploads/"):]))
+    asset = asset_sink.parse_asset_url(reference)
+    if asset:
+        job_id, filename = asset
+        if asset_sink.sink_url() is not None:
+            # This host does not share the platform's disk: the job service hands back what the actor owns.
+            return asset_sink.fetch(job_id, filename, user_id, scratch or tempfile.mkdtemp(prefix="orz-in-"))
+        found = os.path.realpath(os.path.join(owner_root, job_id, "output", filename))
+    elif reference.startswith("/uploads/"):
+        found = os.path.realpath(os.path.join(upload_root, reference[len("/uploads/"):]))
+    else:
+        return _resolve_owned_asset(upload_root, user_id, reference)
     if found.startswith(owner_root + os.sep) and os.path.isfile(found):
         return found
     return None
@@ -413,39 +422,39 @@ def _sound(job: dict) -> tuple:
     one this worker can run is non-commercial (``models.yaml``): without ``foleyModel`` a foley prompt is
     refused rather than quietly made with a licence the caller did not choose.
     """
-    import time
-
-    payload = job.get("payload") or {}
-    upload_root = _upload_root()
-    user_id = job.get("userId")
-
-    reference = payload.get("video")
-    video = _resolve_owned_output(upload_root, user_id, str(reference)) if reference else None
-    if not video:
-        raise InvalidJobPayload("the video to give sound to was not found among your files")
-    voice_ref = payload.get("voice") or None
-    voice = _resolve_owned_output(upload_root, user_id, str(voice_ref)) if voice_ref else None
-    if voice_ref and not voice:
-        raise InvalidJobPayload("the voice-over was not found among your files")
-
-    foley_prompt = (payload.get("foley") or "").strip()
-    music_prompt = (payload.get("music") or "").strip()
-    if not (foley_prompt or music_prompt or voice):
-        raise InvalidJobPayload("describe a foley, a music bed, or bring a voice-over")
-    seed = _seed(payload)
-    try:
-        foley_model = sound_generators.resolve("foley", payload.get("foleyModel")) if foley_prompt else None
-        music_model = sound_generators.resolve("music", payload.get("musicModel")) if music_prompt else None
-    except sound_generators.UnknownSoundModel as unknown:
-        raise InvalidJobPayload(str(unknown)) from unknown
-    if foley_prompt and foley_model is None:
-        raise InvalidJobPayload(
-            "no commercially licensed foley model is installed: ask for one by name with foleyModel "
-            "(mmaudio-large-44k-v2 is non-commercial) or leave foley empty")
-
-    output_path, public_url = _output_paths(job["userId"], job["jobId"])
-    stages = {}
     with tempfile.TemporaryDirectory(prefix="orz-sound-") as scratch:
+        import time
+
+        payload = job.get("payload") or {}
+        upload_root = _upload_root()
+        user_id = job.get("userId")
+
+        reference = payload.get("video")
+        video = _resolve_owned_output(upload_root, user_id, str(reference), scratch) if reference else None
+        if not video:
+            raise InvalidJobPayload("the video to give sound to was not found among your files")
+        voice_ref = payload.get("voice") or None
+        voice = _resolve_owned_output(upload_root, user_id, str(voice_ref), scratch) if voice_ref else None
+        if voice_ref and not voice:
+            raise InvalidJobPayload("the voice-over was not found among your files")
+
+        foley_prompt = (payload.get("foley") or "").strip()
+        music_prompt = (payload.get("music") or "").strip()
+        if not (foley_prompt or music_prompt or voice):
+            raise InvalidJobPayload("describe a foley, a music bed, or bring a voice-over")
+        seed = _seed(payload)
+        try:
+            foley_model = sound_generators.resolve("foley", payload.get("foleyModel")) if foley_prompt else None
+            music_model = sound_generators.resolve("music", payload.get("musicModel")) if music_prompt else None
+        except sound_generators.UnknownSoundModel as unknown:
+            raise InvalidJobPayload(str(unknown)) from unknown
+        if foley_prompt and foley_model is None:
+            raise InvalidJobPayload(
+                "no commercially licensed foley model is installed: ask for one by name with foleyModel "
+                "(mmaudio-large-44k-v2 is non-commercial) or leave foley empty")
+
+        output_path, public_url = _output_paths(job["userId"], job["jobId"])
+        stages = {}
         readable = _materialise(video, scratch)
         tracks = {}
         if foley_model:
@@ -471,17 +480,19 @@ def _sound(job: dict) -> tuple:
             raise InvalidJobPayload(str(bad)) from bad
         stages["mix"] = {"wallSeconds": round(time.time() - started, 1)}
 
-    silent_path = measured.pop("silentPath")
-    url = _store(output_path, job, "video.mp4", "video/mp4", public_url)
-    silent_url = _store(silent_path, job, "video.silent.mp4", "video/mp4",
-                        public_url.replace("video.mp4", "video.silent.mp4"))
-    metrics = {
-        "durationSeconds": measured["durationSeconds"], "width": measured["width"], "height": measured["height"],
-        "loudnessLufs": measured["loudnessLufs"], "tracks": measured["tracks"], "stages": stages,
-        "models": {kind: stage["model"] for kind, stage in stages.items() if "model" in stage},
-    }
-    result = {"url": url, "assetId": url, "silentUrl": silent_url, "format": "mp4", "metrics": metrics}
-    return result, extract_consumption(metrics)
+        silent_path = measured.pop("silentPath")
+        url = _store(output_path, job, "video.mp4", "video/mp4", public_url)
+        silent_url = _store(silent_path, job, "video.silent.mp4", "video/mp4",
+                            public_url.replace("video.mp4", "video.silent.mp4"))
+        metrics = {
+            "durationSeconds": measured["durationSeconds"], "width": measured["width"], "height": measured["height"],
+            "loudnessLufs": measured["loudnessLufs"], "tracks": measured["tracks"], "stages": stages,
+            "models": {kind: stage["model"] for kind, stage in stages.items() if "model" in stage},
+        }
+        result = {"url": url, "assetId": url, "silentUrl": silent_url, "format": "mp4", "metrics": metrics}
+        return result, extract_consumption(metrics)
+
+
 
 
 def _is_sound(routing_key: str) -> bool:

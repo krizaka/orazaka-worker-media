@@ -122,7 +122,11 @@ def generate_foley(model: SoundModel, video: str, prompt: str, seconds: float, o
     started = time.time()
     command = [python, str(RUNNER), "--video", video, "--prompt", prompt, "--duration", f"{seconds:.3f}",
                "--seed", str(seed), "--variant", model.spec["variant"], "--out", out_wav]
-    done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    # MMAudio downloads its weights (~6 GB) into ./weights and ./ext_weights of its working directory:
+    # that is the sound home, never the checkout.
+    home = os.environ.get("SOUND_HOME") or os.path.expanduser("~/.orazaka/sound")
+    done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
+                          cwd=home)
     if done.returncode != 0:
         sys.stderr.write(done.stderr[-2000:])
         raise RuntimeError(f"the foley model failed: {done.stderr.strip().splitlines()[-1] if done.stderr.strip() else done.returncode}")
