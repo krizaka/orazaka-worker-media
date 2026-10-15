@@ -6,7 +6,8 @@
 # from (pinned), how big they are, and how it is run. A model the catalogue names and this file does
 # not is refused by name, never replaced by another one.
 #
-# Only weights whose licence allows commercial use are listed.
+# Weights whose licence allows commercial use are the defaults. A model that does not (`commercial: false`,
+# e.g. CC-BY-NC) may be listed so it can be tried, is never a default, and says so in its row.
 
 video:
   # Wan 2.2 TI2V 5B — the 9:16 model of the GPU droplet `big`. 720p class (704x1280 vertical) at
@@ -129,6 +130,46 @@ image:
         bytes: 168120878
         sha256: ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04
     launch: { steps: 4, cfgScale: 1.0, width: 1024, height: 1024, flags: ["--diffusion-fa"] }
+
+# Sound for a video (orazaka-packs#25, app/sound.py + app/sound_generators.py). Two kinds of model make the
+# tracks; the mix, the -14 LUFS pass and the AAC mux are ffmpeg and need none. The voice-over is a speech
+# asset (the Piper voices of the catalogue), never a model of this file.
+#
+# `commercial` is the licence of the WEIGHTS: the default of a kind must be commercial. Checked in
+# test_sound_models.py.
+sound:
+  # Music bed from a prompt. ACE-Step 1.5 XL turbo, in the Diffusers layout: 8 steps, 48 kHz stereo.
+  acestep-v15-xl-turbo:
+    kind: music
+    label: "ACE-Step 1.5 XL turbo (music bed)"
+    licence: MIT
+    licenceUrl: https://huggingface.co/ACE-Step/acestep-v15-xl-turbo-diffusers
+    commercial: true
+    default: true
+    repo: ACE-Step/acestep-v15-xl-turbo-diffusers
+    revision: 200ba991ae448051e14b0183157e35c2d27c9fb0
+    steps: 8
+    guidance: 7.0
+    minSeconds: 10          # the model's shortest piece: a shorter clip gets the bed cut to it
+    maxSeconds: 120
+    sampleRate: 48000
+    downloadGb: 15.5
+    ramGb: 24
+    hardware: [mps, cuda]
+
+  # Video-to-audio foley, synchronised to the picture. MMAudio's code is MIT but its WEIGHTS are CC-BY-NC 4.0:
+  # evaluation and non-commercial use only. Never a default; a job must ask for it by name.
+  mmaudio-large-44k-v2:
+    kind: foley
+    label: "MMAudio large 44k v2 (video-to-audio foley) — non-commercial"
+    licence: CC-BY-NC-4.0
+    licenceUrl: https://github.com/hkchengrex/MMAudio#licenses
+    commercial: false
+    default: false
+    variant: large_44k_v2
+    maxSeconds: 8           # trained on 8 s: the runner asks for the clip's own length, never more than this
+    sampleRate: 44100
+    hardware: [mps, cuda]
 
 # What a GPU host of each size serves. `scripts/gpu-dev.sh start big|small` (krizaka/orazaka) passes
 # the profile; `python -m app.fetch_models <profile>` puts its weights on the models volume once.
