@@ -105,6 +105,16 @@ class FakePipe:
         return MagicMock(frames=[frames])
 
 
+class TestResidentGuard(unittest.TestCase):
+    def test_a_resident_pipeline_has_paid_for_its_memory(self):
+        with patch.object(wan_generator, "_pipe", object()), patch.object(wan_generator, "_pipe_name", f"{MODEL}:image"):
+            self.assertTrue(wan_generator.is_resident(MODEL, True))
+            self.assertFalse(wan_generator.is_resident(MODEL, False))  # the text pipeline is another resident
+            self.assertFalse(wan_generator.is_resident("not-a-model", True))
+        with patch.object(wan_generator, "_pipe", None):
+            self.assertFalse(wan_generator.is_resident(MODEL, True))
+
+
 class TestLadder(unittest.TestCase):
     def run_with(self, fits, fallback):
         pipe = FakePipe(fits)

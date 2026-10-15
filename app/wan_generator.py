@@ -71,6 +71,14 @@ def _resident_name(model: VideoModel, from_image: bool) -> str:
     return f"{model.name}:image" if from_image else model.name
 
 
+def is_resident(model_name: str, from_image: bool = False) -> bool:
+    """Whether that model's pipeline is the one already loaded in this process (its memory is already taken)."""
+    try:
+        return _pipe is not None and _pipe_name == _resident_name(find(model_name), from_image)
+    except InvalidVideoRequest:
+        return False
+
+
 def _load(model: VideoModel, from_image: bool = False):
     """Loads one Wan pipeline from the local cache, evicting whichever was resident.
 
