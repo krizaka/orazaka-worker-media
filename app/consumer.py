@@ -86,6 +86,15 @@ def split_bindings(declared: list, enabled: bool) -> tuple:
     return shared, (sound if enabled else [])
 
 
+def sound_only(env: dict | None = None) -> bool:
+    """This process drains the sound queue and nothing else (``MEDIA_WORKER_ONLY_SOUND=true``).
+
+    The Mac joins the shared dev queue to add sound; without this it would also take the video jobs of
+    whoever else is using the platform and run them on its own model.
+    """
+    return str((os.environ if env is None else env).get("MEDIA_WORKER_ONLY_SOUND", "")).strip().lower() == "true"
+
+
 BINDINGS, SOUND_BINDINGS = split_bindings(DECLARATION["bindings"], sound_enabled())
 DECLARATION = {**DECLARATION, "bindings": BINDINGS + SOUND_BINDINGS}
 
@@ -647,7 +656,8 @@ def run_consumer() -> None:
     channel.queue_bind(queue=VIDEO_DLQ, exchange=DLX_EXCHANGE, routing_key=VIDEO_QUEUE)
 
     channel.basic_qos(prefetch_count=1)
-    channel.basic_consume(queue=VIDEO_QUEUE, on_message_callback=_dispatch)
+    if not sound_only():
+        channel.basic_consume(queue=VIDEO_QUEUE, on_message_callback=_dispatch)
     if sound_enabled():
         channel.queue_declare(
             queue=SOUND_QUEUE,

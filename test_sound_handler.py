@@ -144,3 +144,8 @@ def test_the_sound_queue_is_consumed_only_where_the_host_says_so():
     shared, sound = consumer.split_bindings(["job.video.*", "job.compose.*", "job.sound.*"], True)
     assert shared == ["job.video.*", "job.compose.*"] and sound == ["job.sound.*"]
     assert "job.sound.*" not in consumer.BINDINGS
+
+
+def test_a_sound_only_process_does_not_drain_the_shared_queue():
+    assert consumer.sound_only({"MEDIA_WORKER_ONLY_SOUND": "true"})
+    assert not consumer.sound_only({}) and not consumer.sound_only({"MEDIA_WORKER_ONLY_SOUND": "no"})
