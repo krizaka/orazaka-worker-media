@@ -11,6 +11,7 @@ family: media
 bindings:
   - "job.video.*"
   - "job.compose.*"
+  - "job.sound.*"       # only where MEDIA_SOUND_ENABLED=true: its own queue, bound and registered there only
 version: "1.0.0"
 concurrency: 1
 

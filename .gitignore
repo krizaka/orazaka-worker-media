@@ -35,3 +35,5 @@ coverage.xml
 var/
 scratch/
 .venv
+weights/
+ext_weights/

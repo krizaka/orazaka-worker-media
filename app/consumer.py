@@ -35,7 +35,7 @@ import urllib.request
 
 import pika
 
-from app import activity, asset_sink, broker, envelope, main, video_models
+from app import activity, asset_sink, broker, envelope, main, sound, sound_generators, video_models
 from app.composer import compose
 from app.registration import load_declaration, start_background_registration
 from app.telemetry import (
@@ -57,13 +57,39 @@ VIDEO_DLQ = VIDEO_QUEUE + ".dlq"
 # binding was a Python edit; now the declaration is one file, used both to bind the queues
 # and to register with the platform.
 DECLARATION = load_declaration()
-BINDINGS = DECLARATION["bindings"]
 
 # Studio media composition (ADR-034 §7.2) shares this queue: it is ffmpeg work on this host's
 # accelerator, so it shares the worker's serialised budget rather than competing with generation
 # from a second consumer. Which binding means "compose" is still a property of the ROUTING KEY the
 # broker delivered under — never of a capability name (P4).
 COMPOSE_PREFIX = "job.compose."
+# Sound for a video (orazaka-packs#25) is ffmpeg + a local model (MPS/CUDA weights of 15 GB the other hosts
+# of this worker do not have), so it has a queue of its own, consumed only where MEDIA_SOUND_ENABLED=true: a
+# GPU droplet that drains `orazaka.jobs.video` never takes a sound job it cannot run. Told apart by the key.
+SOUND_QUEUE = "orazaka.jobs.sound"
+SOUND_PREFIX_BINDING = "job.sound."
+_SERIAL = threading.Lock()   # one job at a time on this host, whichever queue it came from
+
+
+def sound_enabled(env: dict | None = None) -> bool:
+    return str((os.environ if env is None else env).get("MEDIA_SOUND_ENABLED", "")).strip().lower() == "true"
+
+
+def split_bindings(declared: list, enabled: bool) -> tuple:
+    """The declaration's bindings, split by queue: (the shared queue's, the sound queue's).
+
+    The sound bindings are DECLARED (the platform must know someone drains them) but bound, consumed and
+    registered only where this host enabled sound: elsewhere they are left out of both.
+    """
+    sound = [b for b in declared if str(b).startswith(SOUND_PREFIX_BINDING)]
+    shared = [b for b in declared if b not in sound]
+    return shared, (sound if enabled else [])
+
+
+BINDINGS, SOUND_BINDINGS = split_bindings(DECLARATION["bindings"], sound_enabled())
+DECLARATION = {**DECLARATION, "bindings": BINDINGS + SOUND_BINDINGS}
+
+SOUND_PREFIX = "job.sound."
 
 
 def _http_port() -> int:
@@ -375,6 +401,128 @@ def _is_compose(routing_key: str) -> bool:
     return bool(routing_key) and routing_key.startswith(COMPOSE_PREFIX)
 
 
+def _resolve_owned_output(upload_root: str, user_id: str, reference: str, scratch: str | None = None):
+    """A file this actor's earlier step produced, named by the URL that step returned.
+
+    A Studio chains steps with ``{{steps.video.url}}``, which is ``/api/v1/assets/<job>/<file>`` (or, for a
+    worker sharing the platform's disk, ``/uploads/<user>/<job>/output/<file>``) — not an asset id.
+    Ownership is still the path or the job's row: the file must resolve, after symlinks, inside the acting
+    user's own directory, or the job service must say the actor owns that job. Another actor's output is
+    *not found*, the same answer as one that never existed. Anything else falls back to an asset id.
+    """
+    if not reference or not user_id:
+        return None
+    owner_root = os.path.realpath(os.path.join(upload_root, user_id))
+    asset = asset_sink.parse_asset_url(reference)
+    if asset:
+        job_id, filename = asset
+        if asset_sink.sink_url() is not None:
+            # This host does not share the platform's disk: the job service hands back what the actor owns.
+            return asset_sink.fetch(job_id, filename, user_id, scratch or tempfile.mkdtemp(prefix="orz-in-"))
+        found = os.path.realpath(os.path.join(owner_root, job_id, "output", filename))
+    elif reference.startswith("/uploads/"):
+        found = os.path.realpath(os.path.join(upload_root, reference[len("/uploads/"):]))
+    else:
+        return _resolve_owned_asset(upload_root, user_id, reference)
+    if found.startswith(owner_root + os.sep) and os.path.isfile(found):
+        return found
+    return None
+
+
+def _seed(payload: dict):
+    raw = payload.get("seed")
+    try:
+        return int(str(raw).strip()) if raw not in (None, "") else None
+    except ValueError:
+        raise InvalidJobPayload("seed must be a whole number") from None
+
+
+def _sound(job: dict) -> tuple:
+    """Gives a generated clip its sound: foley and/or a music bed and/or a voice-over, mixed and muxed.
+
+    Reads plain values (the interpreter rendered the templates). The silent original is kept beside the
+    clip with sound; both are sealed like every output. Foley asks for a model by name, because the only
+    one this worker can run is non-commercial (``models.yaml``): without ``foleyModel`` a foley prompt is
+    refused rather than quietly made with a licence the caller did not choose.
+    """
+    with tempfile.TemporaryDirectory(prefix="orz-sound-") as scratch:
+        import time
+
+        payload = job.get("payload") or {}
+        upload_root = _upload_root()
+        user_id = job.get("userId")
+
+        reference = payload.get("video")
+        video = _resolve_owned_output(upload_root, user_id, str(reference), scratch) if reference else None
+        if not video:
+            raise InvalidJobPayload("the video to give sound to was not found among your files")
+        voice_ref = payload.get("voice") or None
+        voice = _resolve_owned_output(upload_root, user_id, str(voice_ref), scratch) if voice_ref else None
+        if voice_ref and not voice:
+            raise InvalidJobPayload("the voice-over was not found among your files")
+
+        foley_prompt = (payload.get("foley") or "").strip()
+        music_prompt = (payload.get("music") or "").strip()
+        if not (foley_prompt or music_prompt or voice):
+            raise InvalidJobPayload("describe a foley, a music bed, or bring a voice-over")
+        seed = _seed(payload)
+        try:
+            foley_model = sound_generators.resolve("foley", payload.get("foleyModel")) if foley_prompt else None
+            music_model = sound_generators.resolve("music", payload.get("musicModel")) if music_prompt else None
+        except sound_generators.UnknownSoundModel as unknown:
+            raise InvalidJobPayload(str(unknown)) from unknown
+        if foley_prompt and foley_model is None:
+            raise InvalidJobPayload(
+                "no commercially licensed foley model is installed: ask for one by name with foleyModel "
+                "(mmaudio-large-44k-v2 is non-commercial) or leave foley empty")
+
+        output_path, public_url = _output_paths(job["userId"], job["jobId"])
+        stages = {}
+        readable = _materialise(video, scratch)
+        tracks = {}
+        if foley_model:
+            started = time.time()
+            wav = os.path.join(scratch, "foley.wav")
+            stages["foley"] = sound_generators.generate_foley(foley_model, readable, foley_prompt,
+                                                              sound.probe(readable)["durationSeconds"], wav, seed)
+            tracks["foley"] = wav
+            stages["foley"]["wallSeconds"] = round(time.time() - started, 1)
+        if music_model:
+            started = time.time()
+            wav = os.path.join(scratch, "music.wav")
+            stages["music"] = sound_generators.generate_music(music_model, music_prompt,
+                                                              sound.probe(readable)["durationSeconds"] + 1, wav, seed)
+            tracks["music"] = wav
+            stages["music"]["wallSeconds"] = round(time.time() - started, 1)
+        if voice:
+            tracks["voice"] = _materialise(voice, scratch)
+        started = time.time()
+        try:
+            measured = sound.add_sound(readable, sound.Tracks(**tracks), output_path)
+        except sound.SoundError as bad:
+            raise InvalidJobPayload(str(bad)) from bad
+        stages["mix"] = {"wallSeconds": round(time.time() - started, 1)}
+
+        silent_path = measured.pop("silentPath")
+        url = _store(output_path, job, "video.mp4", "video/mp4", public_url)
+        silent_url = _store(silent_path, job, "video.silent.mp4", "video/mp4",
+                            public_url.replace("video.mp4", "video.silent.mp4"))
+        metrics = {
+            "durationSeconds": measured["durationSeconds"], "width": measured["width"], "height": measured["height"],
+            "loudnessLufs": measured["loudnessLufs"], "tracks": measured["tracks"], "stages": stages,
+            "models": {kind: stage["model"] for kind, stage in stages.items() if "model" in stage},
+        }
+        result = {"url": url, "assetId": url, "silentUrl": silent_url, "format": "mp4", "metrics": metrics}
+        return result, extract_consumption(metrics)
+
+
+
+
+def _is_sound(routing_key: str) -> bool:
+    """Whether the broker delivered this message under the sound binding (read from the key, like compose)."""
+    return bool(routing_key) and routing_key.startswith(SOUND_PREFIX)
+
+
 class InvalidJobPayload(ValueError):
     """The payload was positively checked and found unusable (ADR-053 ``INPUT_INVALID``).
 
@@ -400,11 +548,17 @@ def _dispatch(channel, method, properties, body) -> None:
     to start it again from zero. Prefetch is one, so there is never more than one such thread.
     """
     threading.Thread(
-        target=_on_message,
+        target=_serialised,
         args=(channel, method, properties, body),
         daemon=True,
         name="media-job",
     ).start()
+
+
+def _serialised(channel, method, properties, body) -> None:
+    """One job at a time on this host: a video render and a sound mix never share the accelerator."""
+    with _SERIAL:
+        _on_message(channel, method, properties, body)
 
 
 def _on_message(channel, method, properties, body) -> None:
@@ -417,7 +571,11 @@ def _on_message(channel, method, properties, body) -> None:
         hold_id = _hold_id(job)
         if not job_id or not job.get("userId"):
             raise InvalidJobPayload("JobCommand is missing jobId or userId")
-        if _is_compose(method.routing_key):
+        if _is_sound(method.routing_key):
+            print(f"[consumer] received sound job {job_id}", flush=True)
+            result, consumption = _sound(job)
+            model = COMPOSE_ENGINE
+        elif _is_compose(method.routing_key):
             print(f"[consumer] received compose job {job_id}", flush=True)
             result, consumption = _compose(job)
             # The engine that ran, reported so an assembly is priced as an assembly. Both
@@ -490,6 +648,23 @@ def run_consumer() -> None:
 
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=VIDEO_QUEUE, on_message_callback=_dispatch)
+    if sound_enabled():
+        channel.queue_declare(
+            queue=SOUND_QUEUE,
+            durable=True,
+            arguments={
+                "x-max-length": max_length,
+                "x-overflow": "reject-publish",
+                "x-dead-letter-exchange": DLX_EXCHANGE,
+                "x-dead-letter-routing-key": SOUND_QUEUE,
+            },
+        )
+        for binding in SOUND_BINDINGS:
+            channel.queue_bind(queue=SOUND_QUEUE, exchange=JOBS_EXCHANGE, routing_key=binding)
+        channel.queue_declare(queue=SOUND_QUEUE + ".dlq", durable=True)
+        channel.queue_bind(queue=SOUND_QUEUE + ".dlq", exchange=DLX_EXCHANGE, routing_key=SOUND_QUEUE)
+        channel.basic_consume(queue=SOUND_QUEUE, on_message_callback=_dispatch)
+        print(f"[consumer] consuming {SOUND_QUEUE} ({' + '.join(SOUND_BINDINGS)})", flush=True)
     print(
         f"[consumer] consuming {VIDEO_QUEUE} ({' + '.join(BINDINGS)}) ({broker.describe(params)})",
         flush=True,

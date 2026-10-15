@@ -707,7 +707,10 @@ class TestConsumerDispatch(unittest.TestCase):
         from app.consumer import BINDINGS, COMPOSE_PREFIX
         from app.registration import load_declaration
 
-        self.assertEqual(BINDINGS, load_declaration()["bindings"])
+        # The sound bindings are declared here too, but belong to the sound queue (bound only where sound is enabled).
+        declared = load_declaration()["bindings"]
+        self.assertEqual(BINDINGS, [b for b in declared if not b.startswith("job.sound.")])
+        self.assertIn("job.sound.*", declared)
         self.assertIn("job.video.*", BINDINGS)
         self.assertIn("job.compose.*", BINDINGS)
         self.assertEqual(COMPOSE_PREFIX, "job.compose.")
