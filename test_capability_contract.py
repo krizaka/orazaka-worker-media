@@ -79,7 +79,7 @@ CAPABILITY_ROW = re.compile(
 def _bindings() -> list[str]:
     """The routing keys this worker drains, from its own declaration."""
     declared = yaml.safe_load(WORKER_YAML.read_text())
-    return [binding.replace("*", "") for binding in declared["bindings"] + declared.get("optionalBindings", [])]
+    return [binding.replace("*", "") for binding in declared["bindings"]]
 
 
 def _declared_capabilities() -> list[tuple[str, str, dict]]:

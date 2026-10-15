@@ -57,7 +57,6 @@ VIDEO_DLQ = VIDEO_QUEUE + ".dlq"
 # binding was a Python edit; now the declaration is one file, used both to bind the queues
 # and to register with the platform.
 DECLARATION = load_declaration()
-BINDINGS = DECLARATION["bindings"]
 
 # Studio media composition (ADR-034 §7.2) shares this queue: it is ffmpeg work on this host's
 # accelerator, so it shares the worker's serialised budget rather than competing with generation
@@ -68,12 +67,27 @@ COMPOSE_PREFIX = "job.compose."
 # of this worker do not have), so it has a queue of its own, consumed only where MEDIA_SOUND_ENABLED=true: a
 # GPU droplet that drains `orazaka.jobs.video` never takes a sound job it cannot run. Told apart by the key.
 SOUND_QUEUE = "orazaka.jobs.sound"
-SOUND_BINDINGS = ["job.sound.*"]
+SOUND_PREFIX_BINDING = "job.sound."
 _SERIAL = threading.Lock()   # one job at a time on this host, whichever queue it came from
 
 
 def sound_enabled(env: dict | None = None) -> bool:
     return str((os.environ if env is None else env).get("MEDIA_SOUND_ENABLED", "")).strip().lower() == "true"
+
+
+def split_bindings(declared: list, enabled: bool) -> tuple:
+    """The declaration's bindings, split by queue: (the shared queue's, the sound queue's).
+
+    The sound bindings are DECLARED (the platform must know someone drains them) but bound, consumed and
+    registered only where this host enabled sound: elsewhere they are left out of both.
+    """
+    sound = [b for b in declared if str(b).startswith(SOUND_PREFIX_BINDING)]
+    shared = [b for b in declared if b not in sound]
+    return shared, (sound if enabled else [])
+
+
+BINDINGS, SOUND_BINDINGS = split_bindings(DECLARATION["bindings"], sound_enabled())
+DECLARATION = {**DECLARATION, "bindings": BINDINGS + SOUND_BINDINGS}
 
 SOUND_PREFIX = "job.sound."
 

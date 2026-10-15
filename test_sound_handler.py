@@ -139,4 +139,8 @@ def test_the_sound_queue_is_consumed_only_where_the_host_says_so():
     assert not consumer.sound_enabled({})
     assert not consumer.sound_enabled({"MEDIA_SOUND_ENABLED": "false"})
     assert consumer.SOUND_QUEUE != consumer.VIDEO_QUEUE
-    assert "job.sound." + "*" not in consumer.BINDINGS   # the shared queue never binds it
+    shared, sound = consumer.split_bindings(["job.video.*", "job.compose.*", "job.sound.*"], False)
+    assert shared == ["job.video.*", "job.compose.*"] and sound == []   # declared, but neither bound nor registered here
+    shared, sound = consumer.split_bindings(["job.video.*", "job.compose.*", "job.sound.*"], True)
+    assert shared == ["job.video.*", "job.compose.*"] and sound == ["job.sound.*"]
+    assert "job.sound.*" not in consumer.BINDINGS
