@@ -35,10 +35,11 @@ class TestCatalogue(unittest.TestCase):
 
     def test_aspect_picks_the_providers_sizes(self):
         model = video_models.find(MODEL)
-        self.assertEqual((720, 1280), model.size_for("9:16"))
-        self.assertEqual((1280, 720), model.size_for("16:9"))
-        with self.assertRaises(video_models.UnsupportedAspect):
-            model.size_for("1:1")
+        # Measured: the gateway returns 832x480 whatever size is asked, so only that shape is declared.
+        self.assertEqual((832, 480), model.size_for("16:9"))
+        for refused in ("9:16", "1:1"):
+            with self.assertRaises(video_models.UnsupportedAspect):
+                model.size_for(refused)
 
 
 class TestGenerate(unittest.TestCase):
@@ -50,12 +51,12 @@ class TestGenerate(unittest.TestCase):
             (200, {"id": "video_1", "status": "completed", "output": None}),
             (200, b"MP4BYTES"),
         ])
-        video, facts = remote_video.generate(model, "tea", 720, 1280, 20261011, env=ENV, sleep=lambda s: None, call=call)
+        video, facts = remote_video.generate(model, "tea", 832, 480, 20261011, env=ENV, sleep=lambda s: None, call=call)
         self.assertEqual(b"MP4BYTES", video)
         method, url, key, body = call.calls[0]
         self.assertEqual(("POST", "https://provider.test/v1/videos", "k-test"), (method, url, key))
-        self.assertEqual({"model": MODEL, "prompt": "tea", "size": "720x1280", "fps": 16, "seed": 20261011}, body)
-        self.assertEqual("https://provider.test/v1/video/generations/job_1", call.calls[1][1])
+        self.assertEqual({"model": MODEL, "prompt": "tea", "size": "832x480", "fps": 16, "seed": 20261011}, body)
+        self.assertEqual("https://provider.test/v1/videos/job_1", call.calls[1][1])
         self.assertEqual("https://provider.test/v1/videos/video_1/content", call.calls[3][1])
         self.assertEqual({"provider": "do-inference", "providerJobId": "video_1", "costUsd": 0.6}, {k: facts[k] for k in ("provider", "providerJobId", "costUsd")})
 
@@ -89,7 +90,7 @@ class TestRun(unittest.TestCase):
             body = main.run_remote({"prompt": "tea", "aspect": "16:9", "seed": "7", "output_path": out}, MODEL, generate=fake)
             self.assertEqual(b"VIDEO", open(out, "rb").read())
         metrics = body["metrics"]
-        self.assertEqual((1280, 720, 16, "7", "16:9"), (metrics["width"], metrics["height"], metrics["fps"], metrics["seed"], metrics["aspect"]))
+        self.assertEqual((832, 480, 16, "7", "16:9"), (metrics["width"], metrics["height"], metrics["fps"], metrics["seed"], metrics["aspect"]))
         self.assertEqual("do-inference", metrics["provider"])
 
     def test_a_starting_image_is_refused_not_ignored(self):

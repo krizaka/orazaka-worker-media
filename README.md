@@ -49,7 +49,7 @@ On the Mac, inference never runs in Docker (AGENTS.md §1): this worker runs on 
 |---|---|---|---|---|---|
 | `wan2.2-ti2v-5b` | Wan 2.2 TI2V 5B, text-to-video | Apache-2.0 | 704×1280 | 5 s @ 24 fps | `big` (48 GB) |
 | `wan2.1-t2v-1.3b` | Wan 2.1 T2V 1.3B, text-to-video | Apache-2.0 | 480×832 | 5 s @ 16 fps | `small` (20 GB), `big` |
-| `wan2-2-t2v-a14b` | Wan 2.2 T2V A14B, text-to-video, **served by DigitalOcean serverless inference and routed by Orazaka** (`app/remote_video.py`; nothing runs on this host) | Apache-2.0 | 720×1280 | ≈ 5 s @ 16 fps, $0.60/clip | `AI_INFERENCE_KEY` |
+| `wan2-2-t2v-a14b` | Wan 2.2 T2V A14B, text-to-video, **served by DigitalOcean serverless inference and routed by Orazaka** (`app/remote_video.py`; nothing runs on this host) | Apache-2.0 | 832×480 (16:9 only) | 5 s @ 16 fps, $0.60/clip | `AI_INFERENCE_KEY` |
 | `flux-2-klein-4b` | FLUX.2 [klein] 4B via sd-server | Apache-2.0 | any size | image | both |
 
 `models.yaml` says how each model is fetched (pinned revisions, checksums) and shaped; the platform's catalogue

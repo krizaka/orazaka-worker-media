@@ -7,7 +7,7 @@ other output — so a run of this model is a real Orazaka run, traced by its run
 the pixels came from (``metrics.provider``).
 
 API (docs.digitalocean.com, "Generate video from text"): ``POST /v1/videos`` answers a job id,
-``GET /v1/video/generations/{id}`` its status, ``GET /v1/videos/{id}/content`` the MP4.
+``GET /v1/videos/{id}`` its status, ``GET /v1/videos/{id}/content`` the MP4.
 
 Configuration, by bounded context (never a vendor name): ``AI_INFERENCE_URL`` (default
 ``https://inference.do-ai.run``) and ``AI_INFERENCE_KEY``, a model access key that must list the model.
@@ -105,7 +105,7 @@ def generate(
         if clock() - started > timeout:
             raise RemoteVideoError(f"the provider's job {job_id} did not finish within {timeout}s")
         sleep(POLL_SECONDS)
-        _, raw = call("GET", f"{base}/v1/video/generations/{job_id}", key)
+        _, raw = call("GET", f"{base}/v1/videos/{job_id}", key)
         result = json.loads(raw.decode("utf-8") or "{}")
         status = result.get("status")
         if progress:
@@ -115,7 +115,7 @@ def generate(
     content_id = result.get("id") or job_id
     output = result.get("output") or {}
     url = output.get("url") if isinstance(output, dict) else None
-    if url:
+    if url:  # the documented presigned form; the gateway answers null and serves /content instead
         with urllib.request.urlopen(url, timeout=300) as response:  # noqa: S310 — the provider's presigned https URL
             video = response.read()
     else:
