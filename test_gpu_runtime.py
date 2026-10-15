@@ -171,8 +171,10 @@ class TestSdServerLine(unittest.TestCase):
 
         small = fetch_models.plan("small")
         repos = {repo: patterns for repo, _rev, patterns in small["hf"]}
+        # The small profile serves the 5B too (image to video on 20 GB, with offload): its whole repo is fetched,
+        # and the 1.3B still borrows the 5B's text encoder rather than downloading its own float32 copy.
         self.assertIn("text_encoder/*", repos["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
-        self.assertNotIn("transformer/*", repos["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
+        self.assertIn("transformer/*", repos["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
         self.assertNotIn("text_encoder/*", repos["Wan-AI/Wan2.1-T2V-1.3B-Diffusers"])
         self.assertEqual(3, len(small["files"]))
         big = {repo: patterns for repo, _rev, patterns in fetch_models.plan("big")["hf"]}
@@ -309,9 +311,15 @@ class TestWanThroughTheHttpPipeline(unittest.TestCase):
         self.assertEqual([], self.calls)
 
     def test_a_starting_image_for_a_text_to_video_model_is_a_400(self):
-        status, body = self._post({"prompt": "x", "model": "wan2.2-ti2v-5b", "image": "asset-123"})
+        status, body = self._post({"prompt": "x", "model": "wan2.1-t2v-1.3b", "image": "asset-123"})
         self.assertEqual(400, status)
         self.assertIn("text only", body)
+        self.assertEqual([], self.calls)
+
+    def test_an_unreadable_starting_image_for_the_5b_is_a_400_not_a_grey_clip(self):
+        status, body = self._post({"prompt": "x", "model": "wan2.2-ti2v-5b", "image": "asset-123"})
+        self.assertEqual(400, status)
+        self.assertIn("cannot be read", body)
         self.assertEqual([], self.calls)
 
 

@@ -75,6 +75,19 @@ class VideoModel:
     remote_model: str | None = None
     provider: str | None = None
     cost_usd: float | None = None
+    #: Whether the model can start from a photo (``imageToVideo``): Wan 2.2 TI2V 5B only.
+    image_to_video: bool = False
+    #: Smaller sizes of the same aspect, tried in order when the card runs out of memory at the one
+    #: before (``fallbackSizes``): 1280x704 on a 48 GB card, then what a 20 GB card can hold.
+    fallback_sizes: dict = field(default_factory=dict)
+
+    def size_ladder(self, aspect: str | None, width=None, height=None) -> list[tuple[int, int]]:
+        """The sizes to try for a request, the one asked first. An explicit size has no ladder."""
+        first = self.size_for(aspect, width, height)
+        if width and height:
+            return [first]
+        ratio = normalise_aspect(aspect)
+        return [first, *[tuple(size) for size in self.fallback_sizes.get(ratio, ())]]
 
     def size_for(self, aspect: str | None, width=None, height=None) -> tuple[int, int]:
         """The frame size for an aspect, or for an explicit width and height.
@@ -160,6 +173,11 @@ def video_models(manifest: dict | None = None) -> dict[str, VideoModel]:
             remote_model=spec.get("remoteModel"),
             provider=spec.get("provider"),
             cost_usd=float(spec["costUsd"]) if spec.get("costUsd") is not None else None,
+            image_to_video=bool(spec.get("imageToVideo", False)),
+            fallback_sizes={
+                ratio: tuple(tuple(size) for size in ladder)
+                for ratio, ladder in (spec.get("fallbackSizes") or {}).items()
+            },
         )
     return models
 
@@ -193,3 +211,25 @@ def default_model_name(env: dict | None = None, manifest: dict | None = None) ->
         if declared and declared.get("defaultVideo"):
             return declared["defaultVideo"]
     return _FALLBACK_DEFAULT
+
+
+def crop_to_aspect(image, width: int, height: int, focus: tuple[float, float] = (0.5, 0.5)):
+    """The photo cut to the frame's aspect around its subject, then scaled to ``width`` x ``height``.
+
+    Never a letterbox: what does not fit the frame is cut away, and ``focus`` (x, y in 0..1, the
+    centre by default) says where the subject is, so the cut keeps it. Pure: a PIL image in, one out.
+    """
+    from PIL import Image  # noqa: PLC0415
+
+    source_w, source_h = image.size
+    target = width / height
+    if source_w / source_h > target:  # too wide: cut the sides
+        crop_w, crop_h = round(source_h * target), source_h
+    else:  # too tall: cut top and bottom
+        crop_w, crop_h = source_w, round(source_w / target)
+    fx = min(1.0, max(0.0, float(focus[0])))
+    fy = min(1.0, max(0.0, float(focus[1])))
+    left = min(source_w - crop_w, max(0, round(fx * source_w - crop_w / 2)))
+    top = min(source_h - crop_h, max(0, round(fy * source_h - crop_h / 2)))
+    cut = image.convert("RGB").crop((left, top, left + crop_w, top + crop_h))
+    return cut.resize((int(width), int(height)), Image.LANCZOS)

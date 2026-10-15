@@ -83,3 +83,39 @@ def upload(path: str, job: dict, filename: str, content_type: str, env: dict | N
         raise AssetSinkError("the job service accepted the upload but returned no URL")
     print(f"[asset-sink] {job['jobId']}/{filename}: {len(data)} bytes stored as {url}", flush=True)
     return url
+
+
+def fetch_image(job: dict, target: str, env: dict | None = None) -> str:
+    """Brings a job's starting image to this host, for a worker that does not share the platform's disk.
+
+    The counterpart of :func:`upload`: ``GET /internal/v1/jobs/{jobId}/input/image`` on the job service
+    answers the image the job's archived input names, in the clear, to the actor the job carries. It is
+    written to ``target`` (a scratch file the caller deletes).
+
+    Raises:
+        AssetSinkError: no sink or token, or the job service has no such image for that actor.
+    """
+    base = sink_url(env)
+    if base is None:
+        raise AssetSinkError("MEDIA_ASSET_SINK_URL is not set")
+    token = _service_token()
+    if not token:
+        raise AssetSinkError("no SERVICE token (ORAZAKA_SERVICE_TOKEN) to fetch the starting image")
+    request = urllib.request.Request(  # noqa: S310 — the deployment's own job service, never caller-supplied
+        f"{base}/internal/v1/jobs/{job['jobId']}/input/image",
+        method="GET",
+        headers={"Authorization": f"Bearer {token}", "X-Orazaka-User-Id": str(job.get("userId") or "")},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310 — see above
+            data = response.read()
+    except urllib.error.HTTPError as refused:
+        raise AssetSinkError(f"the job service has no starting image for this job ({refused.code})") from refused
+    except OSError as unreachable:
+        raise ConnectionError(f"the job service is unreachable for the starting image: {unreachable}") from unreachable
+    if not data:
+        raise AssetSinkError("the job service answered an empty starting image")
+    with open(target, "wb") as handle:
+        handle.write(data)
+    print(f"[asset-sink] {job['jobId']}: starting image of {len(data)} bytes fetched", flush=True)
+    return target

@@ -1,4 +1,4 @@
-"""Wan 2.x text-to-video on CUDA (diffusers) — the 9:16 clips of the GPU droplet (ADR-077).
+"""Wan 2.x text- and image-to-video on CUDA (diffusers) — the 9:16 clips of the GPU droplet (ADR-077).
 
 One pipeline is resident at a time (the worker serialises media work); asking for the other Wan
 model evicts the first. Weights come from the models volume (``HF_HOME``), never from the network at
@@ -14,7 +14,13 @@ import os
 import time
 from typing import Callable, Optional
 
-from app.video_models import VideoModel, find, load_manifest
+from app.video_models import (
+    InvalidVideoRequest,
+    VideoModel,
+    crop_to_aspect,
+    find,
+    load_manifest,
+)
 
 #: The negative prompt of Wan's own examples, in English: what a short must not look like.
 DEFAULT_NEGATIVE_PROMPT = (
@@ -60,11 +66,21 @@ def should_offload(model: VideoModel, total_vram_gb: float, env: dict | None = N
     return total_vram_gb < model.vram_gb + 12
 
 
-def _load(model: VideoModel):
-    """Loads one Wan pipeline from the local cache, evicting whichever was resident."""
+def _resident_name(model: VideoModel, from_image: bool) -> str:
+    """What `_pipe_name` holds: a model's text pipeline and its image pipeline are two residents."""
+    return f"{model.name}:image" if from_image else model.name
+
+
+def _load(model: VideoModel, from_image: bool = False):
+    """Loads one Wan pipeline from the local cache, evicting whichever was resident.
+
+    ``from_image`` loads the image-to-video class. For Wan 2.2 TI2V 5B the same weights serve both: the
+    checkpoint's config says ``expand_timesteps`` and ``WanImageToVideoPipeline`` then conditions the
+    first latent frame on the photo (no CLIP image encoder, no second transformer).
+    """
     global _pipe, _pipe_name  # noqa: PLW0603 — one resident pipeline per process, by design
     torch = _torch()
-    from diffusers import AutoencoderKLWan, WanPipeline  # noqa: PLC0415
+    from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanPipeline  # noqa: PLC0415
 
     if _pipe is not None:
         print(f"[wan] evicting {_pipe_name}", flush=True)
@@ -94,9 +110,19 @@ def _load(model: VideoModel):
             revision=donor.revision,
             local_files_only=True,
         )
-    pipe = WanPipeline.from_pretrained(
-        model.repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra
-    )
+    if from_image:
+        pipe = WanImageToVideoPipeline.from_pretrained(
+            model.repo,
+            vae=vae,
+            torch_dtype=torch.bfloat16,
+            expand_timesteps=True,
+            **common,
+            **extra,
+        )
+    else:
+        pipe = WanPipeline.from_pretrained(
+            model.repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra
+        )
     total_gb = 0.0
     if device == "cuda":
         total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
@@ -110,8 +136,15 @@ def _load(model: VideoModel):
         pipe.vae.enable_tiling()
     print(f"[wan] {model.name} loaded in {time.time() - started:.0f}s, {placement}", flush=True)
     _pipe = pipe
-    _pipe_name = model.name
+    _pipe_name = _resident_name(model, from_image)
     return pipe
+
+
+def _is_out_of_memory(failure: BaseException) -> bool:
+    """Whether a CUDA run died for want of memory — the one failure a smaller size can answer."""
+    torch = _torch()
+    oom = getattr(torch.cuda, "OutOfMemoryError", None)
+    return bool((oom and isinstance(failure, oom)) or "out of memory" in str(failure).lower())
 
 
 def generate_wan_frames(
@@ -124,43 +157,69 @@ def generate_wan_frames(
     seed: int,
     negative_prompt: str | None = None,
     progress_callback: Optional[Callable] = None,
+    image=None,
+    focus: tuple[float, float] = (0.5, 0.5),
+    fallback_sizes: tuple = (),
 ) -> list:
-    """Runs one Wan text-to-video generation and returns its frames as PIL images.
+    """Runs one Wan generation and returns its frames as PIL images.
+
+    With ``image`` (a PIL photo) the clip starts from it: the photo is cut to each size's aspect
+    around ``focus`` (never letterboxed). When the card runs out of memory at ``width`` x ``height``,
+    each of ``fallback_sizes`` is tried in turn; the size actually made is the frames' own
+    (``frames[0].size``), and the log says which.
 
     Raises:
         RuntimeError: on any failure — the job reports it; no fallback frames exist.
+        InvalidVideoRequest: a photo for a model that cannot start from one.
     """
     model = find(model_name)
     if model.pipeline != "wan":
         raise RuntimeError(f"model '{model_name}' is not a Wan model")
-    torch = _torch()
-    pipe = _pipe if _pipe_name == model.name else _load(model)
-    generator = torch.Generator(device="cpu").manual_seed(int(seed))
-    started = time.time()
-    try:
-        output = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt or DEFAULT_NEGATIVE_PROMPT,
-            width=width,
-            height=height,
-            num_frames=num_frames,
-            num_inference_steps=steps,
-            guidance_scale=model.guidance,
-            generator=generator,
-            output_type="pil",
-            callback_on_step_end=progress_callback,
+    from_image = image is not None
+    if from_image and not model.image_to_video:
+        raise InvalidVideoRequest(
+            f"model '{model_name}' makes video from text only; leave the starting image empty "
+            "or choose an image-to-video model (wan2.2-ti2v-5b)"
         )
-    except Exception as failure:  # §12: report it, never hide it
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        raise RuntimeError(f"Wan inference failed ({model_name}): {failure}") from failure
-    frames = output.frames[0]
-    if not frames:
-        raise RuntimeError(f"Wan returned no frames ({model_name})")
-    print(
-        f"[wan] {model_name} {width}x{height} {len(frames)} frames, {steps} steps, seed {seed}: "
-        f"{time.time() - started:.0f}s",
-        flush=True,
-    )
-    return list(frames)
+    torch = _torch()
+    wanted = _resident_name(model, from_image)
+    pipe = _pipe if _pipe_name == wanted else _load(model, from_image)
+    ladder = [(int(width), int(height)), *[(int(w), int(h)) for w, h in fallback_sizes]]
+    last_failure: Exception | None = None
+    for w, h in ladder:
+        generator = torch.Generator(device="cpu").manual_seed(int(seed))
+        started = time.time()
+        extra = {"image": crop_to_aspect(image, w, h, focus)} if from_image else {}
+        try:
+            output = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt or DEFAULT_NEGATIVE_PROMPT,
+                width=w,
+                height=h,
+                num_frames=num_frames,
+                num_inference_steps=steps,
+                guidance_scale=model.guidance,
+                generator=generator,
+                output_type="pil",
+                callback_on_step_end=progress_callback,
+                **extra,
+            )
+        except Exception as failure:  # §12: report it, never hide it
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            last_failure = failure
+            if _is_out_of_memory(failure) and (w, h) != ladder[-1]:
+                print(f"[wan] {model_name} {w}x{h}: out of memory, trying the next size", flush=True)
+                continue
+            raise RuntimeError(f"Wan inference failed ({model_name}): {failure}") from failure
+        frames = output.frames[0]
+        if not frames:
+            raise RuntimeError(f"Wan returned no frames ({model_name})")
+        print(
+            f"[wan] {model_name}{' (from a photo)' if from_image else ''} {w}x{h} {len(frames)} "
+            f"frames, {steps} steps, seed {seed}: {time.time() - started:.0f}s",
+            flush=True,
+        )
+        return list(frames)
+    raise RuntimeError(f"Wan inference failed ({model_name}): {last_failure}")

@@ -23,10 +23,19 @@ video:
     steps: 40
     guidance: 5.0
     multiple: 32            # the 5B's VAE compresses 16x16 and its transformer patches 2x2
+    # Text and image to video (diffusers WanImageToVideoPipeline with expand_timesteps, the checkpoint's own
+    # config): a starting photo is cut to the aspect around its subject, never letterboxed.
+    imageToVideo: true
     sizes:
       "9:16": [704, 1280]
       "16:9": [1280, 704]
       "1:1": [960, 960]
+    # A 20 GB card (profile small) runs the model with CPU offload; if 1280x704 does not fit it, the
+    # next size is tried and the run says which one it made.
+    fallbackSizes:
+      "9:16": [[544, 960], [480, 832]]
+      "16:9": [[960, 544], [832, 480]]
+      "1:1": [[768, 768]]
     vramGb: 30              # bf16 transformer 10 GB + activations at 704x1280x121; text encoder offloaded
     ramGb: 24
     downloadGb: 34.2
@@ -129,6 +138,6 @@ profiles:
     defaultVideo: wan2.2-ti2v-5b
     image: flux-2-klein-4b
   small:
-    video: [wan2.1-t2v-1.3b]
+    video: [wan2.2-ti2v-5b, wan2.1-t2v-1.3b]
     defaultVideo: wan2.1-t2v-1.3b
     image: flux-2-klein-4b
