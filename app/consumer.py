@@ -26,6 +26,7 @@ capability this worker was never bound to never arrives.
 import functools
 import json
 import os
+import shutil
 import tempfile
 import threading
 import urllib.error
@@ -159,12 +160,42 @@ def _requested_model(payload: dict, job: dict):
     return None
 
 
+def _starting_image(job: dict, payload: dict, scratch: str):
+    """A readable file of the photo a clip starts from, or ``None`` when the job names none.
+
+    The job service resolved the Studio's asset id to a file of the run's actor (``imagePath``, and
+    ``image`` rewritten to the same path). Where this worker shares that disk (the Mac) the file is
+    opened — decrypted into ``scratch`` when it is sealed. Where it does not (a GPU droplet) it is
+    fetched from the job service over the relay. A blank value is the Studio's empty input.
+    """
+    named = next(
+        (str(payload[key]).strip() for key in ("imagePath", "image") if str(payload.get(key) or "").strip()),
+        "",
+    )
+    if not named:
+        return None
+    if asset_sink.sink_url() is not None:
+        return asset_sink.fetch_image(job, os.path.join(scratch, "starting-image"))
+    if os.path.isabs(named) and os.path.isfile(named):
+        return _materialise(named, scratch)
+    # Named but not there: a run that quietly ignored its photo is not the run that was asked for (§12).
+    raise InvalidJobPayload("the starting image the job names is not readable on this host")
+
+
 def _generate(job: dict) -> tuple:
-    """Runs the generation through the local HTTP pipeline.
+    """Runs the generation through the local HTTP pipeline, with a scratch folder for its input photo.
 
     Returns the job result and, separately, the consumption measurements the
     billing service settles the hold against.
     """
+    scratch = tempfile.mkdtemp(prefix="orazaka-input-")
+    try:
+        return _generate_with(job, scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _generate_with(job: dict, scratch: str) -> tuple:
     job_id = job["jobId"]
     payload = job.get("payload") or {}
     prompt = payload.get("prompt") or payload.get("text")
@@ -181,6 +212,11 @@ def _generate(job: dict) -> tuple:
     request_body["prompt"] = prompt
     request_body["job_id"] = job_id
     request_body["output_path"] = output_path
+    photo = _starting_image(job, payload, scratch)
+    for key in ("image", "imagePath", "image_path"):
+        request_body.pop(key, None)  # the pipeline reads one key, and only a file this host can open
+    if photo:
+        request_body["image_path"] = photo
     model = _requested_model(payload, job)
     if model:
         request_body["model"] = model

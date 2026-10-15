@@ -190,6 +190,38 @@ def load_image(payload: Dict[str, Any]) -> Image.Image:
     return img
 
 
+def _asked_for_an_image(payload: Dict[str, Any]) -> bool:
+    """Whether the caller gave a starting image (blank strings are the Studio's empty input)."""
+    return any(str(payload.get(key) or "").strip() for key in ("image_path", "image"))
+
+
+def _focus(payload: Dict[str, Any]) -> tuple:
+    """Where the subject is in the photo, ``(x, y)`` in 0..1 (``focusX``/``focusY``), centre by default."""
+    def one(key: str) -> float:
+        try:
+            return min(1.0, max(0.0, float(payload.get(key))))
+        except (TypeError, ValueError):
+            return 0.5
+
+    return one("focusX"), one("focusY")
+
+
+def starting_image(payload: Dict[str, Any]) -> Image.Image:
+    """The photo a clip starts from, or a refusal: never a grey stand-in (§12).
+
+    ``image_path`` (a file under the upload directory or a temp directory) wins; ``image`` is the
+    base64 of the file. An image that cannot be read is the caller's to fix, not a reason to animate grey.
+    """
+    try:
+        if str(payload.get("image_path") or "").strip():
+            return Image.open(validate_safe_path(payload["image_path"])).convert("RGB")
+        return Image.open(io.BytesIO(base64.b64decode(payload["image"]))).convert("RGB")
+    except Exception as unreadable:
+        raise video_models.InvalidVideoRequest(
+            f"the starting image cannot be read ({type(unreadable).__name__})"
+        ) from unreadable
+
+
 def _generate_flux_image(
     prompt: str,
     model_name: str,
@@ -431,13 +463,15 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 fps_render = payload.get("videoFps") or payload.get("video_fps")
 
                 wan = video_models.find(model_name) if family == "Wan" else None
-                if wan is not None and payload.get("image"):
-                    # Text-to-video only: a starting image would be silently ignored, and a run
-                    # that ignores what it was given is not the run that was asked for (§12).
-                    raise video_models.InvalidVideoRequest(
-                        f"model '{model_name}' makes video from text only; leave the starting "
-                        "image empty or choose an image-to-video model"
-                    )
+                wan_image = None
+                if wan is not None and _asked_for_an_image(payload):
+                    if not wan.image_to_video:
+                        # A starting image the model would ignore is not the run that was asked for (§12).
+                        raise video_models.InvalidVideoRequest(
+                            f"model '{model_name}' makes video from text only; leave the starting "
+                            "image empty or choose an image-to-video model"
+                        )
+                    wan_image = starting_image(payload)
                 if not steps and wan is not None:
                     steps = wan.steps
                 if not fps_render and wan is not None:
@@ -507,6 +541,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                         frames_n = min(int(explicit_frames), wan.max_frames)
 
                 if wan is not None:
+                    ladder = wan.size_ladder(payload.get("aspect"), payload.get("width"), payload.get("height"))
                     frames = generate_wan_frames(
                         model_name=model_name,
                         prompt=payload.get("prompt", ""),
@@ -517,7 +552,12 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                         seed=seed_val,
                         negative_prompt=payload.get("negativePrompt") or None,
                         progress_callback=progress_cb,
+                        image=wan_image,
+                        focus=_focus(payload),
+                        fallback_sizes=tuple(ladder[1:]) if wan_image is not None else (),
                     )
+                    # The size really made (a smaller one when the card could not hold the first).
+                    req_width, req_height = frames[0].size
                 elif model_name.startswith("argmaxinc/"):
                     # FLUX image generation via mflux (MLX native)
                     frames = _generate_flux_image(
