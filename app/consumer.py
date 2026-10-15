@@ -30,6 +30,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -561,6 +562,28 @@ def _serialised(channel, method, properties, body) -> None:
         _on_message(channel, method, properties, body)
 
 
+#: Jobs this process is running or finished within the hour, by id. A tunnel that drops mid-clip makes the
+#: broker requeue the unacknowledged message, and the reconnected consumer is handed it again while the first
+#: render is still going (or just done): that second delivery is acknowledged and skipped, never rendered twice.
+_SEEN: dict[str, float] = {}
+_SEEN_LOCK = threading.Lock()
+_SEEN_TTL_SECONDS = 3600
+
+
+def _first_delivery(job_id) -> bool:
+    """Records the job as seen and says whether this is its first delivery to this process."""
+    if not job_id:
+        return True
+    now = time.time()
+    with _SEEN_LOCK:
+        for old in [k for k, at in _SEEN.items() if now - at > _SEEN_TTL_SECONDS]:
+            del _SEEN[old]
+        if job_id in _SEEN:
+            return False
+        _SEEN[job_id] = now
+        return True
+
+
 def _on_message(channel, method, properties, body) -> None:
     job_id = None
     hold_id = None
@@ -568,6 +591,9 @@ def _on_message(channel, method, properties, body) -> None:
     try:
         job = json.loads(body.decode("utf-8"))
         job_id = job.get("jobId")
+        if not _first_delivery(job_id):
+            print(f"[consumer] job {job_id} delivered again while it runs or just ran: skipped", flush=True)
+            return  # acknowledged by the finally below, once
         hold_id = _hold_id(job)
         if not job_id or not job.get("userId"):
             raise InvalidJobPayload("JobCommand is missing jobId or userId")
@@ -610,13 +636,18 @@ def _on_message(channel, method, properties, body) -> None:
             send_job_error(job_id, str(e), hold_id=hold_id, cause=EXECUTOR_FAULT)
     finally:
         activity.touch()
-        # Acked from the connection's own thread: pika's BlockingConnection is not thread-safe.
-        channel.connection.add_callback_threadsafe(
-            functools.partial(channel.basic_ack, delivery_tag=method.delivery_tag)
-        )
+        # Acked from the connection's own thread (BlockingConnection is not thread-safe); a connection that is
+        # gone cannot be acked — the broker requeued the message and its redelivery is skipped (_first_delivery).
+        try:
+            channel.connection.add_callback_threadsafe(
+                functools.partial(channel.basic_ack, delivery_tag=method.delivery_tag)
+            )
+        except pika.exceptions.AMQPError as lost:
+            print(f"[consumer] could not acknowledge job {job_id} (the connection is gone): {lost}", flush=True)
 
 
-def run_consumer() -> None:
+def _consume_once() -> None:
+    """One connection's worth of consuming: returns on a clean stop, raises when the connection is lost."""
     params = broker.connection_parameters()
     connection = pika.BlockingConnection(params)
     channel = connection.channel()
@@ -673,8 +704,35 @@ def run_consumer() -> None:
         channel.start_consuming()
     except KeyboardInterrupt:
         channel.stop_consuming()
+        raise
     finally:
-        connection.close()
+        try:
+            connection.close()
+        except pika.exceptions.AMQPError:
+            pass  # already gone: the reconnect below is the answer
+
+
+def run_consumer(retry_seconds: float = 5.0, consume=None, sleep=time.sleep) -> None:
+    """Consumes for as long as the process lives, reconnecting when the connection is lost.
+
+    The GPU droplet reaches the broker through a tunnel that App Platform restarts at every deploy of the
+    app. A dropped connection used to end this process (and with it the clip being rendered, minutes of
+    GPU); now the render thread keeps going, the consumer reconnects, and the broker's redelivery of the
+    unacknowledged message is recognised and skipped (:func:`_first_delivery`).
+    """
+    consume = consume or _consume_once
+    attempt = 0
+    while True:
+        try:
+            consume()
+            return
+        except KeyboardInterrupt:
+            return
+        except (pika.exceptions.AMQPError, OSError) as lost:
+            attempt += 1
+            wait = min(retry_seconds * attempt, 30.0)
+            print(f"[consumer] connection lost ({type(lost).__name__}); reconnecting in {wait:.0f}s", flush=True)
+            sleep(wait)
 
 
 if __name__ == "__main__":
