@@ -42,6 +42,32 @@ video:
     downloadGb: 34.2
     hardware: [cuda]
 
+  # Wan 2.2 T2V A14B run HERE (profile `hero`, an 80 GB card: RunPod H100/A100) — the 720p showcase model. Two 14B experts
+  # (high-noise then low-noise, `boundary_ratio` 0.875 in the checkpoint) loaded in bf16 and swapped through the card by
+  # CPU offload: ~57 GB of weights, ~64 GB of host RAM. 1280x720 (and 720x1280), 81 frames = 5 s at 16 fps. The provider-served
+  # `wan2-2-t2v-a14b` below is the same model at 832x480 on DigitalOcean's serverless inference; this one is ours, at 720p.
+  wan2.2-t2v-a14b:
+    label: "Wan 2.2 T2V A14B (720p, GPU)"
+    licence: Apache-2.0
+    licenceUrl: https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers
+    pipeline: wan
+    repo: Wan-AI/Wan2.2-T2V-A14B-Diffusers
+    revision: 5be7df9619b54f4e2667b2755bc6a756675b5cd7
+    fps: 16
+    maxFrames: 81           # 4k+1: 81 = 5 s at 16 fps
+    steps: 40
+    guidance: 4.0           # the high-noise expert; the low-noise one takes `guidanceTwo`
+    guidanceTwo: 3.0
+    multiple: 16
+    sizes:
+      "16:9": [1280, 720]
+      "9:16": [720, 1280]
+      "1:1": [960, 960]
+    vramGb: 70
+    ramGb: 64
+    downloadGb: 126         # the checkpoint's fp32 shards (two experts x 57 GB + the umt5 text encoder 11 GB)
+    hardware: [cuda]
+
   # Wan 2.1 T2V 1.3B — the dev video model of the GPU droplet `small` (RTX 4000 Ada, 20 GB). 480p
   # class (480x832 vertical) at 16 fps. Its text encoder is the same umt5-xxl as Wan 2.2's, read in
   # bf16 from the 5B's repository: 11.4 GB instead of the 22.7 GB float32 copy its own repository holds.
@@ -178,6 +204,10 @@ profiles:
     video: [wan2.2-ti2v-5b, wan2.1-t2v-1.3b]
     defaultVideo: wan2.2-ti2v-5b
     image: flux-2-klein-4b
+  # An 80 GB card for the 720p showcase: the A14B experts and the 5B, no image engine (an 80 GB pod runs one thing at a time).
+  hero:
+    video: [wan2.2-t2v-a14b, wan2.2-ti2v-5b]
+    defaultVideo: wan2.2-ti2v-5b
   small:
     video: [wan2.2-ti2v-5b, wan2.1-t2v-1.3b]
     defaultVideo: wan2.1-t2v-1.3b

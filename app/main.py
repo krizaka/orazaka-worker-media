@@ -45,6 +45,7 @@ MODEL_REGISTRY: Dict[str, str] = {
     # Wan 2.x on CUDA (diffusers) — the 9:16 clips of the GPU droplet (models.yaml, ADR-077).
     "wan2.2-ti2v-5b": "Wan",
     "wan2.1-t2v-1.3b": "Wan",
+    "wan2.2-t2v-a14b": "Wan",  # the 720p A14B, run here on an 80 GB card (models.yaml `hero`)
     # Served by a provider, routed by Orazaka (app/remote_video.py): nothing runs on this host.
     "wan2-2-t2v-a14b": "Remote",
 }
@@ -66,6 +67,7 @@ MODEL_MEMORY_GB: Dict[str, int] = {
     # Host RAM, not VRAM: what the offloaded components occupy while the card runs the rest.
     "wan2.2-ti2v-5b": 24,
     "wan2.1-t2v-1.3b": 16,
+    "wan2.2-t2v-a14b": 64,  # two bf16 experts (~57 GB) + the text encoder, offloaded
 }
 _DEFAULT_MODEL_GB = 12  # conservative estimate for unregistered models
 

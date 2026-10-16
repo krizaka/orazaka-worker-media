@@ -216,3 +216,38 @@ class TestHandOver(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestA14bLocal(unittest.TestCase):
+    """Wan 2.2 A14B at 720p on an 80 GB card: two experts, its own guidance, its own profile."""
+
+    def test_it_is_a_wan_model_at_720p_with_the_experts_guidance(self):
+        model = video_models.find("wan2.2-t2v-a14b")
+        self.assertEqual("wan", model.pipeline)
+        self.assertEqual((1280, 720), model.size_for("16:9"))
+        self.assertEqual((720, 1280), model.size_for("9:16"))
+        self.assertEqual((16, 81), (model.fps, model.max_frames))
+        self.assertEqual((4.0, 3.0), (model.guidance, model.guidance_two))
+        self.assertEqual(81, model.frames_for(5))
+        self.assertIsNone(video_models.find("wan2.2-ti2v-5b").guidance_two)
+        self.assertFalse(model.image_to_video)  # text to video: a photo is refused by name
+
+    def test_the_hero_profile_fetches_the_experts_and_no_image_engine(self):
+        from app import fetch_models
+
+        plan = fetch_models.plan("hero")
+        repos = {repo: patterns for repo, _rev, patterns in plan["hf"]}
+        self.assertIn("transformer/*", repos["Wan-AI/Wan2.2-T2V-A14B-Diffusers"])
+        self.assertEqual([], plan["files"])
+
+    def test_it_is_registered_and_gets_the_second_guidance_in_the_call(self):
+        main = _main()
+        self.assertEqual("Wan", main.MODEL_REGISTRY["wan2.2-t2v-a14b"])
+        self.assertGreaterEqual(main.MODEL_MEMORY_GB["wan2.2-t2v-a14b"], 64)
+        pipe = FakePipe(5000)
+        torch = MagicMock()
+        with patch.object(wan_generator, "_torch", return_value=torch), patch.object(wan_generator, "_pipe", pipe), patch.object(
+            wan_generator, "_pipe_name", "wan2.2-t2v-a14b"
+        ):
+            wan_generator.generate_wan_frames("wan2.2-t2v-a14b", "x", 1280, 720, 5, 4, 7)
+        self.assertEqual((4.0, 3.0), (pipe.calls[0]["guidance_scale"], pipe.calls[0]["guidance_scale_2"]))

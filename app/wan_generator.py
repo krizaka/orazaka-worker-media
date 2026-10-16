@@ -207,6 +207,7 @@ def generate_wan_frames(
                 num_frames=num_frames,
                 num_inference_steps=steps,
                 guidance_scale=model.guidance,
+                **({"guidance_scale_2": model.guidance_two} if model.guidance_two is not None else {}),
                 generator=generator,
                 output_type="pil",
                 callback_on_step_end=progress_callback,
