@@ -23,7 +23,7 @@ from app.video_models import load_manifest
 
 #: What a Wan pipeline reads from its repository. The text encoder is skipped when the model borrows
 #: its donor's (``textEncoderFrom``), which is the whole point of declaring it.
-_WAN_PARTS = ["model_index.json", "scheduler/*", "tokenizer/*", "transformer/*", "vae/*"]
+_WAN_PARTS = ["model_index.json", "scheduler/*", "tokenizer/*", "transformer/*", "transformer_2/*", "vae/*"]
 
 
 def plan(profile: str, manifest: dict | None = None) -> dict:

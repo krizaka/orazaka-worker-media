@@ -251,3 +251,11 @@ class TestA14bLocal(unittest.TestCase):
         ):
             wan_generator.generate_wan_frames("wan2.2-t2v-a14b", "x", 1280, 720, 5, 4, 7)
         self.assertEqual((4.0, 3.0), (pipe.calls[0]["guidance_scale"], pipe.calls[0]["guidance_scale_2"]))
+
+
+class TestSecondExpert(unittest.TestCase):
+    def test_the_a14b_fetch_includes_the_low_noise_expert(self):
+        from app import fetch_models
+
+        repos = {repo: patterns for repo, _rev, patterns in fetch_models.plan("hero")["hf"]}
+        self.assertIn("transformer_2/*", repos["Wan-AI/Wan2.2-T2V-A14B-Diffusers"])  # without it the snapshot is incomplete
