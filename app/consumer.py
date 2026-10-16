@@ -36,7 +36,17 @@ import urllib.request
 
 import pika
 
-from app import activity, asset_sink, broker, envelope, main, sound, sound_generators, video_models
+from app import (
+    activity,
+    asset_sink,
+    broker,
+    envelope,
+    job_control,
+    main,
+    sound,
+    sound_generators,
+    video_models,
+)
 from app.composer import compose
 from app.registration import load_declaration, start_background_registration
 from app.telemetry import (
@@ -44,8 +54,10 @@ from app.telemetry import (
     INPUT_INVALID,
     PLATFORM_UNAVAILABLE,
     extract_consumption,
+    send_job_cancelled,
     send_job_done,
     send_job_error,
+    send_progress_update,
 )
 
 JOBS_EXCHANGE = "orazaka.jobs"
@@ -281,6 +293,8 @@ def _generate_with(job: dict, scratch: str) -> tuple:
         with urllib.request.urlopen(request, timeout=1800) as response:  # noqa: S310 — fixed loopback target (127.0.0.1 + configured port), never a caller-supplied URL
             body = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as refused:
+        if refused.code == main.CANCELLED_STATUS:
+            raise job_control.JobCancelled(f"job {job_id} was cancelled by its owner") from refused
         if refused.code == 400:
             # The pipeline positively checked the request and refused it (unknown model, an aspect
             # the model cannot make, a starting image for a text-to-video model): the caller's.
@@ -290,6 +304,7 @@ def _generate_with(job: dict, scratch: str) -> tuple:
     # The generator wrote plaintext through ffmpeg; seal it before anything else can read it
     # (ADR-054). In place and atomically, so a kill here leaves the plaintext or the envelope and
     # never a half-sealed file — or, on a host that does not share the store, hand it over.
+    send_progress_update(job_id, 100, phase="uploading")
     url = _store(output_path, job, "video.mp4", "video/mp4", public_url)
     result = {"url": url, "format": "mp4"}
     metrics = body.get("metrics")
@@ -644,6 +659,12 @@ def _on_message(channel, method, properties, body) -> None:
         hold_id = _hold_id(job)
         if not job_id or not job.get("userId"):
             raise InvalidJobPayload("JobCommand is missing jobId or userId")
+        if job_control.is_cancelled(job_id):
+            # Its owner stopped it while it waited in the queue: drop it before a GPU second is spent.
+            print(f"[consumer] job {job_id} was cancelled while queued: dropped", flush=True)
+            send_job_cancelled(job_id, hold_id=hold_id)
+            return
+        send_progress_update(job_id, 0, phase="loading")
         if _is_sound(method.routing_key):
             print(f"[consumer] received sound job {job_id}", flush=True)
             result, consumption = _sound(job)
@@ -663,6 +684,10 @@ def _on_message(channel, method, properties, body) -> None:
             model = job.get("model") or None
         send_job_done(job_id, result, hold_id=hold_id, consumption=consumption, model=model)
         print(f"[consumer] job {job_id} done: {result['url']}", flush=True)
+    except job_control.JobCancelled:
+        print(f"[consumer] job {job_id} cancelled by its owner", flush=True)
+        if job_id:
+            send_job_cancelled(job_id, hold_id=hold_id)
     except InvalidJobPayload as bad:
         print(f"[consumer] job {job_id} rejected: {bad}", flush=True)
         if job_id:
@@ -791,4 +816,5 @@ if __name__ == "__main__":
     # Registration runs on its own daemon thread and never gates consumption: a worker that
     # cannot reach the job service still drains its queues (ADR-038).
     start_background_registration(DECLARATION)
+    job_control.start_cancel_listener()
     run_consumer()
