@@ -99,7 +99,8 @@ class TestModelRouting(unittest.TestCase):
                 donor = models[model].text_encoder_from
                 if donor:
                     self.assertIn(donor, models)
-            self.assertIn(profile["image"], manifest["image"], name)
+            if "image" in profile:  # `hero` runs video only on an 80 GB card
+                self.assertIn(profile["image"], manifest["image"], name)
 
     def test_every_wan_model_is_pinned_and_licensed_for_commercial_use(self):
         manifest = video_models.load_manifest()

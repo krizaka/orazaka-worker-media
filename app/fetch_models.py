@@ -46,7 +46,8 @@ def plan(profile: str, manifest: dict | None = None) -> dict:
         else:
             parts.add("text_encoder/*")
         snapshots.setdefault((spec["repo"], spec["revision"]), set()).update(parts)
-    files = list(manifest["image"][declared["image"]]["files"])
+    # A profile without an image engine (`hero`: an 80 GB card running video only) fetches no image files.
+    files = list(manifest["image"][declared["image"]]["files"]) if declared.get("image") else []
     return {
         "hf": [(repo, revision, sorted(patterns)) for (repo, revision), patterns in snapshots.items()],
         "files": files,

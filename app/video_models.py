@@ -64,6 +64,8 @@ class VideoModel:
     multiple: int
     sizes: dict = field(default_factory=dict)
     guidance: float = 5.0
+    #: The low-noise expert's guidance (Wan 2.2 A14B has two experts); None for the single-transformer models.
+    guidance_two: float | None = None
     repo: str | None = None
     revision: str | None = None
     text_encoder_from: str | None = None
@@ -164,6 +166,7 @@ def video_models(manifest: dict | None = None) -> dict[str, VideoModel]:
             multiple=int(spec["multiple"]),
             sizes={ratio: tuple(size) for ratio, size in (spec.get("sizes") or {}).items()},
             guidance=float(spec.get("guidance", 5.0)),
+            guidance_two=float(spec["guidanceTwo"]) if spec.get("guidanceTwo") is not None else None,
             repo=spec.get("repo"),
             revision=spec.get("revision"),
             text_encoder_from=spec.get("textEncoderFrom"),
