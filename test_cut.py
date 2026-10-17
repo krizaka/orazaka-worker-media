@@ -132,6 +132,13 @@ def _ffmpeg_can_draw_text() -> bool:
     return all(f" {name} " in listed for name in ("drawtext", "xfade", "lut3d", "minterpolate"))
 
 
+class TestParallelSegments(unittest.TestCase):
+    def test_shots_are_made_side_by_side_within_the_cores(self):
+        self.assertEqual(8, cut.segment_workers(10, 16))
+        self.assertEqual(3, cut.segment_workers(3, 64))
+        self.assertEqual(1, cut.segment_workers(10, 1))
+
+
 class TestUpscaleAndFoley(unittest.TestCase):
     """Hollywood finishing (ADR-080): SeedVR2 per source clip, aspect kept; a synthesized foley bed and hits, no model."""
 
