@@ -136,6 +136,9 @@ class VideoModel:
         if self.pipeline == "wan":
             frames = ((frames - 1) // 4) * 4 + 1
             frames = max(5, min(frames, self.max_frames))
+        elif self.pipeline == "ltx":  # LTX counts frames 8k + 1
+            frames = ((frames - 1) // 8) * 8 + 1
+            frames = max(9, min(frames, self.max_frames))
         return frames
 
 
@@ -237,6 +240,19 @@ def default_model_name(env: dict | None = None, manifest: dict | None = None) ->
         if declared and declared.get("defaultVideo"):
             return declared["defaultVideo"]
     return _FALLBACK_DEFAULT
+
+
+def kept_fraction(image, width: int, height: int) -> float:
+    """The share of the photo's pixels that stay in the frame once it is cut to ``width`` x ``height``'s aspect (1.0: none lost).
+
+    A portrait still cut to 16:9 keeps about a third of itself, and image-to-video then amplifies what is left: the Krizaka
+    cinematic kit makes the still at the video's own aspect (``image-generation`` 1360x768 or 768x1360) so this stays near 1.
+    """
+    source_w, source_h = image.size
+    target = width / height
+    if source_w / source_h > target:
+        return round((source_h * target) / source_w, 4)
+    return round((source_w / target) / source_h, 4)
 
 
 def crop_to_aspect(image, width: int, height: int, focus: tuple[float, float] = (0.5, 0.5)):

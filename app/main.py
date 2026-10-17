@@ -46,7 +46,9 @@ MODEL_REGISTRY: Dict[str, str] = {
     "wan2.2-ti2v-5b": "Wan",
     "wan2.1-t2v-1.3b": "Wan",
     "wan2.2-t2v-a14b": "Wan",  # the 720p A14B, run here on an 80 GB card (models.yaml `hero`)
-    "wan2.2-i2v-a14b": "Wan",  # the shots of a cinematic short, from their keyframes (models.yaml `cinema`, ADR-080)
+    "ltx-video-0.9.8-13b-distilled": "Wan",  # "Wan" is this worker's label for the diffusers video generators (app/wan_generator.py): LTX is one
+    "wan2.2-i2v-a14b": "Wan",
+    "wan2.2-i2v-a14b-hq": "Wan",  # the same checkpoint at its full 40-step schedule (the bake-off's winner for people in 9:16)  # the shots of a cinematic short, from their keyframes (models.yaml `cinema`, ADR-080)
     # Served by a provider, routed by Orazaka (app/remote_video.py): nothing runs on this host.
     "wan2-2-t2v-a14b": "Remote",
 }
@@ -645,6 +647,9 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
 
                 _record_consumption(metrics, frames, steps, fps_render, req_width, req_height)
                 _record_provenance(metrics, model_name, seed_val, payload.get("aspect"), frames, fps_render)
+                if family == "Wan" and wan_image is not None:
+                    # How much of the starting image the frame kept (a portrait still cut to 16:9 keeps a third): said, never hidden.
+                    metrics["imageKept"] = video_models.kept_fraction(wan_image, int(req_width), int(req_height))
 
                 output_path = payload.get("output_path")
                 if job_id:
