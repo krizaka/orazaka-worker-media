@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 #: The output frame size per aspect: 1080p, the size every short-form platform and a 16:9 player expect.
@@ -467,6 +468,12 @@ def upscale_command(edit: Edit, source: str, output: str, env: dict) -> list[str
             "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4"]
 
 
+def segment_workers(shots: int, cpus: int | None = None) -> int:
+    """How many shots are made at once: one per two cores (x264 threads too), never more than the shots, at least one."""
+    cores = cpus if cpus is not None else (os.cpu_count() or 1)
+    return max(1, min(shots, cores // 2))
+
+
 def find_font(env: dict | None = None) -> str:
     source = os.environ if env is None else env
     for candidate in (source.get("MEDIA_FONT_FILE"), *FONT_CANDIDATES):
@@ -516,15 +523,19 @@ def cut(clips: list[str], edit: Edit, output_path: str, provenance: dict | None 
                         os.environ.get("SEEDVR2_HOME", staging))
                 upscaled[index] = target
         clips = [upscaled.get(i, path) for i, path in enumerate(clips)]
-        segments, durations = [], []
-        for i, shot in enumerate(edit.shots):
-            segment = os.path.join(staging, f"shot-{i:02d}.mp4")
+        segments = [os.path.join(staging, f"shot-{i:02d}.mp4") for i in range(len(edit.shots))]
+
+        def make(i: int) -> None:
+            shot = edit.shots[i]
             _run_in(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{shot.start:.3f}",
                      "-to", f"{shot.end:.3f}", "-i", os.path.abspath(clips[shot.clip]), "-an",
                      "-vf", shot_filter(edit, shot), "-c:v", "libx264", "-preset", "medium", "-crf", "16",
-                     "-r", str(edit.fps), segment], staging)
-            segments.append(segment)
-            durations.append(_probe_seconds(segment))
+                     "-r", str(edit.fps), segments[i]], staging)
+
+        # Motion-compensated interpolation is single-threaded: the shots are made side by side, one per spare core.
+        with ThreadPoolExecutor(max_workers=segment_workers(len(edit.shots))) as pool:
+            list(pool.map(make, range(len(edit.shots))))
+        durations = [_probe_seconds(segment) for segment in segments]
         spans = timeline(edit)
         graph = join_filter(edit, durations) + ";[joined]" + ",".join(text_filters(edit, spans, font, staging)) + "[out]"
         length = spans[-1][1]
