@@ -254,6 +254,8 @@ profiles:
     defaultVideo: wan2.2-i2v-a14b
     image: flux-2-klein-4b
     sound: [acestep-v15-xl-turbo]
+    # The voice-over (app/speech_server.py): Kokoro-82M, Apache-2.0, pinned there; served on the image engine's port.
+    speech: kokoro-82m
   small:
     video: [wan2.2-ti2v-5b, wan2.1-t2v-1.3b]
     defaultVideo: wan2.1-t2v-1.3b
