@@ -116,3 +116,13 @@ def test_a_track_shorter_than_the_clip_is_padded_not_cutting_the_picture(clip, t
     out = str(tmp_path / "o.mp4")
     sound.add_sound(clip, Tracks(foley=_tone(tmp_path, "f", 500, 1)), out)
     assert abs(sound.probe(out)["durationSeconds"] - 4.0) < 0.15
+
+
+def test_every_track_is_conformed_to_float_planar_so_the_sidechain_never_renegotiates():
+    # ffmpeg 4.4 (the GPU pod's) failed the foley + music + voice mix with "Error reinitializing filters" when a voice
+    # decoded as s16 met the float bed in sidechaincompress; every track now enters the graph as fltp 48 kHz stereo.
+    from app import sound
+
+    graph, order = sound.mix_graph(sound.Tracks(foley="/f.wav", music="/m.wav", voice="/v.mp3"), 10.0)
+    assert order == ["foley", "music", "voice"]
+    assert graph.count("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo") == 3

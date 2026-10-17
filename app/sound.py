@@ -100,7 +100,7 @@ def _gain(db: float) -> str:
 def _conform(label_in: str, label_out: str, seconds: float, db: float, bed: bool) -> str:
     """One track, put on the picture's clock: stereo 48 kHz, cut or padded to the clip, levelled."""
     chain = [
-        f"aformat=sample_rates={SAMPLE_RATE}:channel_layouts=stereo",
+        f"aformat=sample_fmts=fltp:sample_rates={SAMPLE_RATE}:channel_layouts=stereo",
         "asetpts=PTS-STARTPTS",
         f"atrim=0:{seconds:.3f}",
         _gain(db),
