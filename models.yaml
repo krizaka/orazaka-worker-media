@@ -27,6 +27,7 @@ video:
     # Text and image to video (diffusers WanImageToVideoPipeline with expand_timesteps, the checkpoint's own
     # config): a starting photo is cut to the aspect around its subject, never letterboxed.
     imageToVideo: true
+    expandTimesteps: true   # the 5B's checkpoint config: the photo conditions the first latent frame
     sizes:
       "9:16": [704, 1280]
       "16:9": [1280, 704]
@@ -58,6 +59,12 @@ video:
     steps: 40
     guidance: 4.0           # the high-noise expert; the low-noise one takes `guidanceTwo`
     guidanceTwo: 3.0
+    # Given a starting image, the same name runs the image-to-video checkpoint of the family (two more experts, same
+    # sizes, same 81 frames at 16 fps): `imageRepo`, pinned by commit. It is fetched only where it is used (`app.fetch_models`
+    # does not put it on a profile: ~106 GB), and a missing checkpoint fails the job by name.
+    imageToVideo: true
+    imageRepo: Wan-AI/Wan2.2-I2V-A14B-Diffusers
+    imageRevision: 596658fd9ca6b7b71d5057529bbf319ecbc61d74
     multiple: 16
     sizes:
       "16:9": [1280, 720]

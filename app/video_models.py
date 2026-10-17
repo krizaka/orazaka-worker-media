@@ -77,8 +77,16 @@ class VideoModel:
     remote_model: str | None = None
     provider: str | None = None
     cost_usd: float | None = None
-    #: Whether the model can start from a photo (``imageToVideo``): Wan 2.2 TI2V 5B only.
+    #: Whether the model can start from a photo (``imageToVideo``): Wan 2.2 TI2V 5B (the same weights) and Wan 2.2 A14B
+    #: (its own image-to-video checkpoint, ``imageRepo``).
     image_to_video: bool = False
+    #: The checkpoint that serves a starting photo when it is not ``repo`` (Wan 2.2 A14B: text and image are two
+    #: checkpoints of the same family), pinned by commit like ``repo``.
+    image_repo: str | None = None
+    image_revision: str | None = None
+    #: Whether ``WanImageToVideoPipeline`` conditions the first latent frame (the 5B's ``expand_timesteps``); the
+    #: A14B image checkpoint carries its own configuration and is never forced.
+    expand_timesteps: bool = False
     #: Smaller sizes of the same aspect, tried in order when the card runs out of memory at the one
     #: before (``fallbackSizes``): 1280x704 on a 48 GB card, then what a 20 GB card can hold.
     fallback_sizes: dict = field(default_factory=dict)
@@ -177,6 +185,9 @@ def video_models(manifest: dict | None = None) -> dict[str, VideoModel]:
             provider=spec.get("provider"),
             cost_usd=float(spec["costUsd"]) if spec.get("costUsd") is not None else None,
             image_to_video=bool(spec.get("imageToVideo", False)),
+            image_repo=spec.get("imageRepo"),
+            image_revision=spec.get("imageRevision"),
+            expand_timesteps=bool(spec.get("expandTimesteps", False)),
             fallback_sizes={
                 ratio: tuple(tuple(size) for size in ladder)
                 for ratio, ladder in (spec.get("fallbackSizes") or {}).items()

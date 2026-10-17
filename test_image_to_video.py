@@ -230,7 +230,7 @@ class TestA14bLocal(unittest.TestCase):
         self.assertEqual((4.0, 3.0), (model.guidance, model.guidance_two))
         self.assertEqual(81, model.frames_for(5))
         self.assertIsNone(video_models.find("wan2.2-ti2v-5b").guidance_two)
-        self.assertFalse(model.image_to_video)  # text to video: a photo is refused by name
+        self.assertTrue(model.image_to_video)  # given a photo, the family's image-to-video checkpoint serves it (test_i2v_a14b.py)
 
     def test_the_hero_profile_fetches_the_experts_and_no_image_engine(self):
         from app import fetch_models

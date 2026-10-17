@@ -101,9 +101,11 @@ def _load(model: VideoModel, from_image: bool = False):
 
     device = _device()
     started = time.time()
-    common = {"revision": model.revision, "local_files_only": True}
+    # A photo may be served by its own checkpoint (Wan 2.2 A14B: text and image are two checkpoints of one family).
+    repo, revision = (model.image_repo, model.image_revision) if from_image and model.image_repo else (model.repo, model.revision)
+    common = {"revision": revision, "local_files_only": True}
     vae = AutoencoderKLWan.from_pretrained(
-        model.repo, subfolder="vae", torch_dtype=torch.float32, **common
+        repo, subfolder="vae", torch_dtype=torch.float32, **common
     )
     extra = {}
     if model.text_encoder_from:
@@ -121,16 +123,16 @@ def _load(model: VideoModel, from_image: bool = False):
         )
     if from_image:
         pipe = WanImageToVideoPipeline.from_pretrained(
-            model.repo,
+            repo,
             vae=vae,
             torch_dtype=torch.bfloat16,
-            expand_timesteps=True,
+            **({"expand_timesteps": True} if model.expand_timesteps else {}),
             **common,
             **extra,
         )
     else:
         pipe = WanPipeline.from_pretrained(
-            model.repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra
+            repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra
         )
     total_gb = 0.0
     if device == "cuda":
@@ -188,7 +190,7 @@ def generate_wan_frames(
     if from_image and not model.image_to_video:
         raise InvalidVideoRequest(
             f"model '{model_name}' makes video from text only; leave the starting image empty "
-            "or choose an image-to-video model (wan2.2-ti2v-5b)"
+            "or choose an image-to-video model (wan2.2-ti2v-5b, wan2.2-t2v-a14b)"
         )
     torch = _torch()
     wanted = _resident_name(model, from_image)
