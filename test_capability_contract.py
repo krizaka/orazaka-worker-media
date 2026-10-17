@@ -64,7 +64,14 @@ HANDLERS = {
     # left it out and reported `durationSeconds` and `image` unread, which was the test being wrong
     # rather than the worker. A contract that names the wrong module is the transcription problem
     # again, one level up.
-    "job.video.": ["app/consumer.py", "app/main.py", "app/generator.py", "app/mlx_generator.py"],
+    "job.video.": [
+        "app/consumer.py",
+        "app/main.py",
+        "app/generator.py",
+        "app/mlx_generator.py",
+        # the optional upscale step reads payload["upscale"] here (main.apply_upscale calls it)
+        "app/upscale.py",
+    ],
 }
 
 #: A seeded capability row: key, handler, routing key … then its two contract schemas.
