@@ -21,7 +21,7 @@ try:
 except ImportError:
     torch = None
 
-from app import job_control, remote_video, video_models
+from app import job_control, remote_video, upscale, video_models
 from app.encoder import export_frames_to_video
 from app.generator import generate_video_frames
 from app.telemetry import resource_guard, send_progress_update
@@ -302,6 +302,18 @@ def _record_consumption(metrics, frames, steps, fps, req_width, req_height) -> N
         print(f"Failed to record consumption metrics: {e}", flush=True)
 
 
+def apply_upscale(payload: Dict[str, Any], path: str, metrics: Dict[str, Any]) -> None:
+    """The Studio's optional `upscale` step: the finished clip at `path` is replaced by its 1080p/4K version, and the
+    metrics say what was done (model, from, to, seconds) and the size the clip now has."""
+    target = upscale.requested(payload)
+    if not target:
+        return
+    facts = upscale.upscale(path, target)
+    metrics.update(facts)
+    width, height = facts["upscaleTo"].split("x")
+    metrics["width"], metrics["height"] = int(width), int(height)
+
+
 def _gpu_name() -> str | None:
     """The accelerator this host ran on, for the facts kept with a clip."""
     try:
@@ -439,6 +451,15 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"error": f"Model '{model_name}' is not registered."}).encode('utf-8'))
+            return
+
+        try:
+            upscale.requested(payload)  # a value nobody can make is refused before a GPU second is spent
+        except video_models.InvalidVideoRequest as bad:
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(bad)}).encode('utf-8'))
             return
 
         process = psutil.Process(os.getpid()) if psutil else None
@@ -621,6 +642,9 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                     safe_output_path = validate_safe_path(output_path)
                     os.makedirs(os.path.dirname(safe_output_path), exist_ok=True)
                     export_frames_to_video(frames, safe_output_path, fps=fps_render)
+                    if job_id:
+                        send_progress_update(job_id, 100, phase="upscaling")
+                    apply_upscale(payload, safe_output_path, metrics)
                     response_data = {"status": "success", "output_path": safe_output_path, "metrics": metrics}
                 else:
                     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
