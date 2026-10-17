@@ -23,8 +23,9 @@ class Runner:
         if cmd[0] == "ffprobe":
             return SimpleNamespace(stdout="1280,704\n")
         out = cmd[cmd.index("--output") + 1] if "--output" in cmd else cmd[-1]
-        if self.root is None or os.path.realpath(out).startswith(self.root + os.sep):  # only ever inside the scratch folders of the test
-            with open(out, "wb") as handle:
+        resolved = os.path.realpath(out)
+        if self.root is None or resolved.startswith(self.root + os.sep):  # only ever inside the scratch folders of the test
+            with open(resolved, "wb") as handle:
                 handle.write(b"upscaled")
         return SimpleNamespace(stdout="")
 

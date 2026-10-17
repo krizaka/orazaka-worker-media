@@ -36,16 +36,6 @@ def requested(payload: dict) -> str | None:
     return "2160p" if key == "4k" else key
 
 
-def _inside(path: str, roots) -> str:
-    """The real path of `path`, which must be under one of `roots` — a clip is only ever read and replaced where the worker writes its outputs."""
-    resolved = os.path.realpath(path)
-    for root in roots:
-        base = os.path.realpath(root)
-        if resolved == base or resolved.startswith(base + os.sep):
-            return resolved
-    raise InvalidUpscale("the clip to upscale is outside the worker's output directories")
-
-
 def _config(env) -> tuple[str, str, str]:
     home, python = env.get("SEEDVR2_HOME"), env.get("SEEDVR2_PYTHON")
     if not home or not python:
@@ -61,15 +51,22 @@ def _size(path: str, run) -> tuple[int, int]:
 
 def upscale(source: str, target_key: str, roots, run=subprocess.run, env=os.environ, clock=time.monotonic) -> dict:
     """Replaces `source` (an mp4 under one of `roots`) in place by its upscaled version; returns the facts the run reports."""
-    source = _inside(source, roots)
+    # The clip is only ever read and replaced where the worker writes its outputs (checked on the real path, before anything runs).
+    resolved = os.path.realpath(source)
+    for root in roots:
+        base = os.path.realpath(root)
+        if resolved.startswith(base + os.sep):
+            break
+    else:
+        raise InvalidUpscale("the clip to upscale is outside the worker's output directories")
     home, python, models = _config(env)
     width, height = TARGETS[target_key]
-    before = _size(source, run)
+    before = _size(resolved, run)
     started = clock()
     with tempfile.TemporaryDirectory(prefix="orazaka-upscale-") as scratch:
         raw = os.path.join(scratch, "seedvr2.mp4")
         run(
-            [python, os.path.join(home, "inference_cli.py"), source, "--output", raw, "--resolution", str(height), "--dit_model", DIT,
+            [python, os.path.join(home, "inference_cli.py"), resolved, "--output", raw, "--resolution", str(height), "--dit_model", DIT,
              "--model_dir", models, "--batch_size", "5", "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4",
              *(["--vae_encode_tiled", "--vae_decode_tiled"] if height > 1080 else [])],
             check=True, cwd=home,
@@ -81,7 +78,7 @@ def upscale(source: str, target_key: str, roots, run=subprocess.run, env=os.envi
              "-preset", "slow", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", final],
             check=True,
         )
-        os.replace(final, source)
+        os.replace(final, resolved)
     return {
         "upscaleModel": MODEL,
         "upscaleFrom": f"{before[0]}x{before[1]}",
