@@ -17,7 +17,7 @@ from app import video_models
 MODEL = "seedvr2-3b"
 DIT = "seedvr2_ema_3b_fp16.safetensors"
 
-# The short side SeedVR2 is asked for, and the exact frame the clip leaves in (16:9, the aspect is kept by cutting the sides).
+# The frame the clip leaves in, for a landscape clip (a portrait clip leaves in the same frame turned: 1080x1920, 2160x3840).
 TARGETS = {"1080p": (1920, 1080), "2160p": (3840, 2160), "4k": (3840, 2160)}
 
 
@@ -62,19 +62,22 @@ def upscale(source: str, target_key: str, roots, run=subprocess.run, env=os.envi
     home, python, models = _config(env)
     width, height = TARGETS[target_key]
     before = _size(resolved, run)
+    if before[1] > before[0]:  # a vertical clip leaves in a vertical frame
+        width, height = height, width
     started = clock()
     with tempfile.TemporaryDirectory(prefix="orazaka-upscale-") as scratch:
         raw = os.path.join(scratch, "seedvr2.mp4")
         run(
-            [python, os.path.join(home, "inference_cli.py"), resolved, "--output", raw, "--resolution", str(height), "--dit_model", DIT,
+            [python, os.path.join(home, "inference_cli.py"), resolved, "--output", raw, "--resolution", str(min(width, height)), "--dit_model", DIT,
              "--model_dir", models, "--batch_size", "5", "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4",
-             *(["--vae_encode_tiled", "--vae_decode_tiled"] if height > 1080 else [])],
+             *(["--vae_encode_tiled", "--vae_decode_tiled"] if min(width, height) > 1080 else [])],
             check=True, cwd=home,
         )
         final = os.path.join(scratch, "final.mp4")
-        # SeedVR2 keeps the source's aspect (1280x704 is a little wider than 16:9): scale to the height, cut the sides to the exact frame.
+        # SeedVR2 keeps the source's aspect (LTX's 1216x704 is a little narrower than 16:9, Wan's 1280x704 a little wider): scale to cover the
+        # frame, then cut what overhangs — never a crop larger than the picture.
         run(
-            ["ffmpeg", "-v", "error", "-y", "-i", raw, "-vf", f"scale=-2:{height}:flags=lanczos,crop={width}:{height}", "-c:v", "libx264", "-crf", "16",
+            ["ffmpeg", "-v", "error", "-y", "-i", raw, "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,crop={width}:{height}", "-c:v", "libx264", "-crf", "16",
              "-preset", "slow", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", final],
             check=True,
         )
