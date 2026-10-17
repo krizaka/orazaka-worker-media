@@ -310,6 +310,8 @@ profiles:
     defaultVideo: wan2.2-i2v-a14b
     image: flux-2-klein-4b
     sound: [acestep-v15-xl-turbo]
+    # The voice-over (app/speech_server.py): Kokoro-82M, Apache-2.0, pinned there; served on the image engine's port.
+    speech: kokoro-82m
   # The Krizaka cinematic kit: FLUX stills at the video's own aspect, then the model the bake-off picks per use — LTX-Video 0.9.8 for
   # landscape and iteration (14 s a clip), Wan 2.2 I2V A14B at 40 steps for people in 9:16 (18 min), the 4-step distill between them.
   kit:
