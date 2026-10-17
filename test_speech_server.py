@@ -1,0 +1,26 @@
+"""Speech on the GPU host (app/speech_server.py): the request is checked, the routes are split, no model needed."""
+import json
+import unittest
+
+from app import speech_server as s
+
+
+class TestSpeechRequest(unittest.TestCase):
+    def test_a_request_is_checked_and_a_foreign_voice_falls_back(self):
+        got = s.parse_request(json.dumps({"model": "kokoro-82m", "input": "  Hello\n  world ", "voice": "alloy"}).encode())
+        self.assertEqual({"text": "Hello world", "voice": "af_heart", "format": "mp3", "speed": 1.0}, got)
+        self.assertEqual("af_bella", s.parse_request(json.dumps({"input": "x", "voice": "af_bella"}).encode())["voice"])
+
+    def test_another_model_or_an_empty_text_is_refused_by_name(self):
+        for body in ({"model": "tts-1", "input": "x"}, {"input": ""}, {"input": "x", "response_format": "flac"}):
+            with self.subTest(body), self.assertRaises(s.SpeechRequestError):
+                s.parse_request(json.dumps(body).encode())
+
+    def test_only_the_speech_path_is_answered_here(self):
+        self.assertTrue(s.routes_to_speech("POST", "/v1/audio/speech"))
+        self.assertFalse(s.routes_to_speech("POST", "/v1/images/generations"))
+        self.assertFalse(s.routes_to_speech("GET", "/v1/audio/speech"))
+
+
+if __name__ == "__main__":
+    unittest.main()
