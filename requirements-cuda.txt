@@ -14,3 +14,4 @@ psutil==7.2.2
 PyYAML==6.0.3
 cryptography==50.0.2
 soundfile==0.14.0
+kokoro==0.9.4
