@@ -36,6 +36,16 @@ def requested(payload: dict) -> str | None:
     return "2160p" if key == "4k" else key
 
 
+def _inside(path: str, roots) -> str:
+    """The real path of `path`, which must be under one of `roots` — a clip is only ever read and replaced where the worker writes its outputs."""
+    resolved = os.path.realpath(path)
+    for root in roots:
+        base = os.path.realpath(root)
+        if resolved == base or resolved.startswith(base + os.sep):
+            return resolved
+    raise InvalidUpscale("the clip to upscale is outside the worker's output directories")
+
+
 def _config(env) -> tuple[str, str, str]:
     home, python = env.get("SEEDVR2_HOME"), env.get("SEEDVR2_PYTHON")
     if not home or not python:
@@ -49,8 +59,9 @@ def _size(path: str, run) -> tuple[int, int]:
     return int(width), int(height)
 
 
-def upscale(source: str, target_key: str, run=subprocess.run, env=os.environ, clock=time.monotonic) -> dict:
-    """Replaces `source` (an mp4) in place by its upscaled version; returns the facts the run reports."""
+def upscale(source: str, target_key: str, roots, run=subprocess.run, env=os.environ, clock=time.monotonic) -> dict:
+    """Replaces `source` (an mp4 under one of `roots`) in place by its upscaled version; returns the facts the run reports."""
+    source = _inside(source, roots)
     home, python, models = _config(env)
     width, height = TARGETS[target_key]
     before = _size(source, run)

@@ -14,16 +14,18 @@ ENV = {"SEEDVR2_HOME": "/opt/seedvr2", "SEEDVR2_PYTHON": "/opt/up/bin/python", "
 class Runner:
     """Records the commands; ffprobe answers a 1280x704 clip, ffmpeg and the upscaler write their output file."""
 
-    def __init__(self):
+    def __init__(self, root=None):
         self.calls = []
+        self.root = os.path.realpath(root) if root else None
 
     def __call__(self, cmd, **kw):
         self.calls.append(cmd)
         if cmd[0] == "ffprobe":
             return SimpleNamespace(stdout="1280,704\n")
         out = cmd[cmd.index("--output") + 1] if "--output" in cmd else cmd[-1]
-        with open(out, "wb") as handle:
-            handle.write(b"upscaled")
+        if self.root is None or os.path.realpath(out).startswith(self.root + os.sep):  # only ever inside the scratch folders of the test
+            with open(out, "wb") as handle:
+                handle.write(b"upscaled")
         return SimpleNamespace(stdout="")
 
 
@@ -47,6 +49,7 @@ class TestRequested(unittest.TestCase):
 class TestUpscale(unittest.TestCase):
     def _clip(self):
         folder = tempfile.mkdtemp()
+        self.folder = folder
         path = os.path.join(folder, "clip.mp4")
         with open(path, "wb") as handle:
             handle.write(b"original")
@@ -54,15 +57,16 @@ class TestUpscale(unittest.TestCase):
 
     def test_a_worker_without_the_upscaler_refuses_by_name(self):
         with self.assertRaises(upscale.InvalidUpscale):
-            upscale.upscale(self._clip(), "1080p", run=Runner(), env={})
+            upscale.upscale(self._clip(), "1080p", [tempfile.gettempdir()], run=Runner(), env={})
 
     def test_1080p_runs_seedvr2_at_the_target_height_then_cuts_to_the_exact_frame_and_replaces_the_clip(self):
-        runner, clip = Runner(), self._clip()
+        clip = self._clip()
+        runner = Runner(tempfile.gettempdir())
         ticks = iter([10.0, 71.5])
-        facts = upscale.upscale(clip, "1080p", run=runner, env=ENV, clock=lambda: next(ticks))
+        facts = upscale.upscale(clip, "1080p", [os.path.dirname(clip)], run=runner, env=ENV, clock=lambda: next(ticks))
         probe, seedvr, ffmpeg = runner.calls
         self.assertEqual("ffprobe", probe[0])
-        self.assertEqual(["/opt/up/bin/python", "/opt/seedvr2/inference_cli.py", clip], seedvr[:3])
+        self.assertEqual(["/opt/up/bin/python", "/opt/seedvr2/inference_cli.py", os.path.realpath(clip)], seedvr[:3])
         self.assertEqual("1080", seedvr[seedvr.index("--resolution") + 1])
         self.assertEqual(upscale.DIT, seedvr[seedvr.index("--dit_model") + 1])
         self.assertEqual("/models/seedvr2", seedvr[seedvr.index("--model_dir") + 1])
@@ -72,14 +76,27 @@ class TestUpscale(unittest.TestCase):
         self.assertEqual({"upscaleModel": "seedvr2-3b", "upscaleFrom": "1280x704", "upscaleTo": "1920x1080", "upscaleSeconds": 61.5}, facts)
 
     def test_4k_tiles_the_vae_and_leaves_in_3840x2160(self):
-        runner = Runner()
-        facts = upscale.upscale(self._clip(), "2160p", run=runner, env=ENV)
+        runner = Runner(tempfile.gettempdir())
+        facts = upscale.upscale(self._clip(), "2160p", [self.folder], run=runner, env=ENV)
         seedvr, ffmpeg = runner.calls[1], runner.calls[2]
         self.assertEqual("2160", seedvr[seedvr.index("--resolution") + 1])
         self.assertIn("--vae_encode_tiled", seedvr)
         self.assertIn("--vae_decode_tiled", seedvr)
         self.assertIn("scale=-2:2160:flags=lanczos,crop=3840:2160", ffmpeg)
         self.assertEqual("3840x2160", facts["upscaleTo"])
+
+
+class TestPathGuard(unittest.TestCase):
+    def test_a_clip_outside_the_workers_output_directories_is_refused_before_anything_runs(self):
+        runner = Runner()
+        with self.assertRaises(upscale.InvalidUpscale):
+            upscale.upscale("/etc/passwd", "1080p", [tempfile.gettempdir()], run=runner, env=ENV)
+        self.assertEqual([], runner.calls)
+
+    def test_a_path_that_climbs_out_of_the_root_is_refused(self):
+        root = tempfile.mkdtemp()
+        with self.assertRaises(upscale.InvalidUpscale):
+            upscale.upscale(os.path.join(root, "..", "x.mp4"), "1080p", [root], run=Runner(), env=ENV)
 
 
 class TestWiring(unittest.TestCase):
@@ -106,7 +123,7 @@ class TestWiring(unittest.TestCase):
         metrics = {"width": 1280, "height": 704}
         with patch("app.upscale.upscale", return_value=facts) as run:
             self._main().apply_upscale({"upscale": "1080p"}, "/tmp/clip.mp4", metrics)
-        run.assert_called_once_with("/tmp/clip.mp4", "1080p")
+        self.assertEqual(("/tmp/clip.mp4", "1080p"), run.call_args.args[:2])
         self.assertEqual((1920, 1080, "seedvr2-3b"), (metrics["width"], metrics["height"], metrics["upscaleModel"]))
 
 

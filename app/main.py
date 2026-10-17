@@ -136,6 +136,12 @@ def _upload_roots() -> list:
     return [os.path.abspath(os.path.realpath(c)) for c in candidates]
 
 
+def _allowed_roots() -> list:
+    """The directories the worker may read and write media in: the working directory, the temp directories and the uploads."""
+    roots = [os.getcwd(), tempfile.gettempdir(), *_upload_roots()]
+    return roots + [t for t in ("/tmp", "/private/tmp", "/var/tmp") if os.path.exists(t)]  # noqa: S108 — an allow-list
+
+
 def validate_safe_path(path: str) -> str:
     """Validates that a path is safe to access, preventing directory traversal."""
     if not path:
@@ -308,7 +314,7 @@ def apply_upscale(payload: Dict[str, Any], path: str, metrics: Dict[str, Any]) -
     target = upscale.requested(payload)
     if not target:
         return
-    facts = upscale.upscale(path, target)
+    facts = upscale.upscale(path, target, _allowed_roots())
     metrics.update(facts)
     width, height = facts["upscaleTo"].split("x")
     metrics["width"], metrics["height"] = int(width), int(height)
