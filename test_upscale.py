@@ -72,7 +72,7 @@ class TestUpscale(unittest.TestCase):
         self.assertEqual(upscale.DIT, seedvr[seedvr.index("--dit_model") + 1])
         self.assertEqual("/models/seedvr2", seedvr[seedvr.index("--model_dir") + 1])
         self.assertNotIn("--vae_encode_tiled", seedvr)  # 1080p fits without tiling
-        self.assertIn("scale=-2:1080:flags=lanczos,crop=1920:1080", ffmpeg)
+        self.assertIn("scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", ffmpeg)
         self.assertEqual(b"upscaled", open(clip, "rb").read())  # replaced in place
         self.assertEqual({"upscaleModel": "seedvr2-3b", "upscaleFrom": "1280x704", "upscaleTo": "1920x1080", "upscaleSeconds": 61.5}, facts)
 
@@ -83,8 +83,41 @@ class TestUpscale(unittest.TestCase):
         self.assertEqual("2160", seedvr[seedvr.index("--resolution") + 1])
         self.assertIn("--vae_encode_tiled", seedvr)
         self.assertIn("--vae_decode_tiled", seedvr)
-        self.assertIn("scale=-2:2160:flags=lanczos,crop=3840:2160", ffmpeg)
+        self.assertIn("scale=3840:2160:force_original_aspect_ratio=increase:flags=lanczos,crop=3840:2160", ffmpeg)
         self.assertEqual("3840x2160", facts["upscaleTo"])
+
+
+class TestShapes(unittest.TestCase):
+    """The frame the clip leaves in follows the clip's own orientation and never asks for pixels the upscale did not make."""
+
+    def _run(self, size, target):
+        class Probe(Runner):
+            def __call__(self, cmd, **kw):
+                if cmd[0] == "ffprobe":
+                    self.calls.append(cmd)
+                    return SimpleNamespace(stdout=size + "\n")
+                return super().__call__(cmd, **kw)
+
+        folder = tempfile.mkdtemp()
+        clip = os.path.join(folder, "clip.mp4")
+        with open(clip, "wb") as handle:
+            handle.write(b"x")
+        runner = Probe(tempfile.gettempdir())
+        facts = upscale.upscale(clip, target, [folder], run=runner, env=ENV)
+        return facts, runner
+
+    def test_a_vertical_clip_leaves_in_1080x1920_and_asks_seedvr2_for_the_short_side(self):
+        facts, runner = self._run("720,1280", "1080p")
+        self.assertEqual("1080x1920", facts["upscaleTo"])
+        seedvr, ffmpeg = runner.calls[1], runner.calls[2]
+        self.assertEqual("1080", seedvr[seedvr.index("--resolution") + 1])
+        self.assertIn("scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920", ffmpeg)
+
+    def test_a_clip_a_little_narrower_than_16_9_is_scaled_up_to_cover_the_frame_then_cut(self):
+        # LTX makes 1216x704 (1.73): at 1080 high it is 1865 wide, short of 1920 — the crop would fail, so the scale covers the frame.
+        facts, runner = self._run("1216,704", "1080p")
+        self.assertEqual("1920x1080", facts["upscaleTo"])
+        self.assertIn("scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", runner.calls[2])
 
 
 class TestPathGuard(unittest.TestCase):

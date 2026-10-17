@@ -14,3 +14,8 @@ psutil==7.2.2
 PyYAML==6.0.3
 cryptography==50.0.2
 soundfile==0.14.0
+# LTX-Video's tokenizer path and the video IO of the LTX pipeline (found on the first LTX run on a pod)
+tiktoken==0.14.0
+protobuf==7.36.2
+imageio==2.38.1
+imageio-ffmpeg==0.6.0
