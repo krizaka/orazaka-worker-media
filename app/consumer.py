@@ -401,7 +401,15 @@ def _cut(job: dict) -> tuple:
     with tempfile.TemporaryDirectory(prefix="orz-cut-in-") as scratch:
         readable = []
         for i, reference in enumerate(references):
-            found = _resolve_owned_output(upload_root, user_id, reference, scratch)
+            if _ASSET_ID.fullmatch(reference) and asset_sink.sink_url() is not None:
+                # An uploaded clip (an asset id), on a host that does not share the platform's disk: the job service
+                # hands back the actor's own upload, as it does a video's starting image.
+                try:
+                    found = asset_sink.fetch_image(job, os.path.join(scratch, f"clip-{i:02d}.mp4"), asset=reference)
+                except asset_sink.AssetSinkError:
+                    found = None
+            else:
+                found = _resolve_owned_output(upload_root, user_id, reference, scratch)
             if not found:
                 raise InvalidJobPayload(f"clip {i} was not found among your files")
             readable.append(_materialise(found, scratch))
