@@ -42,6 +42,11 @@ def plan(profile: str, manifest: dict | None = None) -> dict:
         spec = manifest["video"][name]
         cache = spec.get("cache") or "volume"
         parts = set(_WAN_PARTS)
+        if spec.get("pipeline") == "ltx":  # LTX-Video: one transformer, its own T5 text encoder, no donor
+            snapshots.setdefault((spec["repo"], spec["revision"], cache), set()).update(
+                {"model_index.json", "scheduler/*", "tokenizer/*", "text_encoder/*", "transformer/*", "vae/*"}
+            )
+            continue
         if spec.get("textEncoderFrom"):
             donor = manifest["video"][spec["textEncoderFrom"]]
             snapshots.setdefault((donor["repo"], donor["revision"], donor.get("cache") or "volume"), set()).update(

@@ -42,6 +42,46 @@ class TestCatalogue(unittest.TestCase):
         self.assertEqual(81, video_models.find("wan2.2-t2v-a14b").frames_for(5))
 
 
+class TestHighQualityWan(unittest.TestCase):
+    """The bake-off's winner for people in 9:16: the same I2V A14B checkpoint, undistilled (40 steps, guidance 3.5)."""
+
+    def test_it_shares_the_checkpoint_of_the_distilled_model_and_runs_the_full_schedule(self):
+        hq, fast = video_models.find("wan2.2-i2v-a14b-hq"), video_models.find("wan2.2-i2v-a14b")
+        self.assertEqual((fast.repo, fast.revision), (hq.repo, hq.revision))  # one 115 GB fetch serves both
+        self.assertEqual((40, 3.5, 3.5), (hq.steps, hq.guidance, hq.guidance_two))
+        self.assertEqual((16, 81), (hq.fps, hq.max_frames))
+        self.assertTrue(hq.image_to_video and hq.requires_image)
+        self.assertEqual((1280, 720), hq.size_for("16:9"))
+        self.assertEqual((720, 1280), hq.size_for("9:16"))
+
+    def test_the_distilled_model_keeps_its_four_steps_and_its_loras(self):
+        fast = video_models.find("wan2.2-i2v-a14b")
+        self.assertEqual(4, fast.steps)
+        self.assertIsNotNone(fast.lora)
+
+    def test_the_hq_model_loads_no_lora_and_is_on_the_cinema_profile(self):
+        self.assertIsNone(video_models.find("wan2.2-i2v-a14b-hq").lora)
+        self.assertIn("wan2.2-i2v-a14b-hq", video_models.load_manifest()["profiles"]["cinema"]["video"])
+
+
+class TestKitProfile(unittest.TestCase):
+    def test_the_kit_profile_serves_the_bake_off_models_and_flux_stills(self):
+        from app import fetch_models
+
+        manifest = video_models.load_manifest()
+        kit = manifest["profiles"]["kit"]
+        self.assertEqual(NAME, kit["defaultVideo"])
+        self.assertEqual({NAME, "wan2.2-i2v-a14b-hq", "wan2.2-i2v-a14b"}, set(kit["video"]))
+        self.assertEqual("flux-2-klein-4b", kit["image"])
+        work = fetch_models.plan("kit")
+        by_repo = {repo: (patterns, cache) for repo, _rev, patterns, cache in work["hf"]}
+        patterns, cache = by_repo["Lightricks/LTX-Video-0.9.8-13B-distilled"]
+        self.assertEqual("scratch", cache)  # the volume is full
+        self.assertIn("text_encoder/*", patterns)
+        self.assertNotIn("transformer_2/*", patterns)  # one transformer, not Wan's two experts
+        self.assertIn("transformer_2/*", by_repo["Wan-AI/Wan2.2-I2V-A14B-Diffusers"][0])
+
+
 class TestGenerate(unittest.TestCase):
     def _run(self, image):
         frames = [Image.new("RGB", (1216, 704)) for _ in range(121)]
