@@ -203,3 +203,33 @@ class TestFfmpegMakesTheFilm(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheCutFetchesUploadedClips(unittest.TestCase):
+    def test_an_asset_id_clip_is_fetched_from_the_job_service_on_a_remote_host(self):
+        import sys
+        import types
+        from unittest.mock import patch
+
+        sys.modules.setdefault("pika", types.ModuleType("pika"))
+        from app import consumer
+
+        asset = "0b6f2a52-1c1e-4c84-9a8e-2f6b2b1d9a10"
+        job = {"jobId": "j1", "userId": "u1", "payload": {"clips": [asset], "edit": json.dumps({"shots": [{"clip": 0, "out": 2}]})}}
+        fetched = []
+
+        def fake_fetch(job_arg, target, asset=None):
+            fetched.append((job_arg["jobId"], asset))
+            return target
+
+        with tempfile.TemporaryDirectory() as root, \
+                patch.object(consumer.asset_sink, "sink_url", return_value="http://job-service"), \
+                patch.object(consumer.asset_sink, "fetch_image", side_effect=fake_fetch), \
+                patch.object(consumer, "_upload_root", return_value=root), \
+                patch.object(consumer, "_materialise", side_effect=lambda path, scratch: path), \
+                patch.object(consumer.film, "cut", return_value={"durationSeconds": 2.0, "width": 1080, "height": 1920}), \
+                patch.object(consumer, "_store", return_value="/api/v1/assets/j1/video.mp4"), \
+                patch.object(consumer, "send_progress_update"):
+            result, _ = consumer._cut(job)
+        self.assertEqual([("j1", asset)], fetched)
+        self.assertEqual("/api/v1/assets/j1/video.mp4", result["url"])
