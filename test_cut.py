@@ -132,6 +132,44 @@ def _ffmpeg_can_draw_text() -> bool:
     return all(f" {name} " in listed for name in ("drawtext", "xfade", "lut3d", "minterpolate"))
 
 
+class TestUpscaleAndFoley(unittest.TestCase):
+    """Hollywood finishing (ADR-080): SeedVR2 per source clip, aspect kept; a synthesized foley bed and hits, no model."""
+
+    def test_seedvr2_takes_the_short_side_to_1080_whatever_the_aspect(self):
+        env = {"SEEDVR2_HOME": "/up/seedvr2", "SEEDVR2_PYTHON": "/up/venv/bin/python", "MEDIA_MODELS_DIR": "/models"}
+        vertical = cut.parse_edit({**TWO, "upscale": "seedvr2"}, 2)
+        command = cut.upscale_command(vertical, "/in.mp4", "/out.mp4", env)
+        self.assertEqual("1080", command[command.index("--resolution") + 1])
+        self.assertEqual("/models/seedvr2", command[command.index("--model_dir") + 1])
+        self.assertEqual("/up/seedvr2/inference_cli.py", command[1])
+        with self.assertRaises(cut.EditError):
+            cut.upscale_command(vertical, "/in.mp4", "/out.mp4", {})
+
+    def test_unknown_upscaler_or_ambience_is_refused(self):
+        for key, value in (("upscale", "esrgan-x9"), ("ambience", "jungle-party")):
+            with self.subTest(key), self.assertRaises(cut.EditError):
+                cut.parse_edit({**TWO, key: value}, 2)
+
+    def test_hits_fall_on_the_transitions_flashes_and_ramps(self):
+        edit = cut.parse_edit({**TWO, "sfx": True}, 2)
+        events = cut.sfx_events(edit, cut.timeline(edit))
+        kinds = [k for k, _ in events]
+        self.assertEqual(["whoosh", "impact", "impact"], kinds)  # flash: whoosh + impact; the ramp: impact
+        _, flash_at = events[1]
+        self.assertAlmostEqual(cut.timeline(edit)[1][0], flash_at)
+        self.assertEqual([], cut.sfx_events(cut.parse_edit(TWO, 2), cut.timeline(cut.parse_edit(TWO, 2))))
+
+    def test_the_foley_graph_has_a_bed_unique_labels_and_ends_on_fx(self):
+        edit = cut.parse_edit({**TWO, "sfx": True, "ambience": "storm"}, 2)
+        graph = cut.foley_graph(edit, cut.timeline(edit), 5.0)
+        self.assertTrue(graph.endswith("[fx]"))
+        self.assertIn("[bed]", graph)
+        self.assertIn("[s1]", graph)
+        self.assertIn("[s2]", graph)
+        self.assertNotIn("[s]", graph)
+        self.assertIsNone(cut.foley_graph(cut.parse_edit(TWO, 2), cut.timeline(cut.parse_edit(TWO, 2)), 5.0))
+
+
 @unittest.skipUnless(_ffmpeg_can_draw_text(), "ffmpeg without drawtext/xfade/lut3d (e.g. Homebrew's default build)")
 class TestFfmpegMakesTheFilm(unittest.TestCase):
     def test_two_clips_become_one_graded_labelled_1080p_film(self):
@@ -144,13 +182,16 @@ class TestFfmpegMakesTheFilm(unittest.TestCase):
                                 "-pix_fmt", "yuv420p", path], check=True)
                 clips.append(path)
             out = os.path.join(work, "film.mp4")
-            edit = cut.parse_edit({**TWO, "interpolate": False}, 2)
+            edit = cut.parse_edit({**TWO, "interpolate": False, "sfx": True, "ambience": "rain"}, 2)
             measured = cut.cut(clips, edit, out, font=cut.find_font())
             self.assertEqual((1080, 1920), (measured["width"], measured["height"]))
             self.assertAlmostEqual(cut.timeline(edit)[-1][1], measured["durationSeconds"], delta=0.25)
             probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json",
                                                out], capture_output=True, text=True, check=True).stdout)
             self.assertIn("AI-generated", probe["format"]["tags"]["comment"])
+            streams = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", out],
+                                     capture_output=True, text=True, check=True).stdout.split()
+            self.assertEqual(["video", "audio"], streams)  # the synthesized foley is the film's own sound
 
 
 if __name__ == "__main__":

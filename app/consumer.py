@@ -609,6 +609,13 @@ def _sound(job: dict) -> tuple:
             stages["music"]["wallSeconds"] = round(time.time() - started, 1)
         if voice:
             tracks["voice"] = _materialise(voice, scratch)
+        if not foley_model and sound.probe(readable)["audio"]:
+            # The picture already carries its own sound (a cut's synthesized foley, ADR-080): it is the foley track
+            # of the mix, under the music and the voice — never silently dropped.
+            own = os.path.join(scratch, "own.wav")
+            sound._run(["ffmpeg", "-y", "-hide_banner", "-v", "error", "-i", readable, "-vn", "-ac", "2", "-ar", "48000", own])
+            tracks["foley"] = own
+            stages["foley"] = {"model": "picture's own sound"}
         started = time.time()
         try:
             measured = sound.add_sound(readable, sound.Tracks(**tracks), output_path)

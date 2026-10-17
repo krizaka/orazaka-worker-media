@@ -62,6 +62,21 @@ TEXT_STYLES = {
 
 DEFAULT_LABEL = "AI-generated"
 
+#: The upscalers the cut knows: SeedVR2 3B (Apache-2.0), the one measured best by the showcase comparison.
+UPSCALERS = ("none", "seedvr2")
+SEEDVR2_DIT = "seedvr2_ema_3b_fp16.safetensors"
+
+#: Synthesized ambience beds (ffmpeg ``anoisesrc`` through filters — no model, no licence): what each sounds like.
+AMBIENCES = {
+    "none": None,
+    "rain": "anoisesrc=color=pink:amplitude=0.5,highpass=f=500,lowpass=f=9000,volume=-14dB",
+    "storm": "anoisesrc=color=pink:amplitude=0.6,highpass=f=300,lowpass=f=8000,volume=-12dB",
+    "wind": "anoisesrc=color=brown:amplitude=0.7,lowpass=f=700,tremolo=f=0.25:d=0.6,volume=-16dB",
+    "city": "anoisesrc=color=brown:amplitude=0.6,lowpass=f=400,volume=-18dB",
+    "room": "anoisesrc=color=pink:amplitude=0.2,lowpass=f=2000,volume=-30dB",
+    "nature": "anoisesrc=color=pink:amplitude=0.3,highpass=f=1500,lowpass=f=6000,tremolo=f=0.6:d=0.4,volume=-24dB",
+}
+
 #: Fonts tried in order when ``MEDIA_FONT_FILE`` names none: the GPU pod's DejaVu, then the Mac's.
 FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -114,6 +129,12 @@ class Edit:
     titles: tuple = field(default_factory=tuple)
     label: str = DEFAULT_LABEL
     interpolate: bool = True
+    #: Super-resolution of each source clip before the cut (``seedvr2``: SeedVR2 3B, Apache-2.0) or ``none`` (lanczos).
+    upscale: str = "none"
+    #: The synthesized foley bed under the film (no model: filtered noise and tones): ``none`` or an ambience.
+    ambience: str = "none"
+    #: Whooshes on transitions and impacts on ramps and flashes, synthesized.
+    sfx: bool = False
 
     @property
     def size(self) -> tuple[int, int]:
@@ -200,9 +221,16 @@ def parse_edit(raw, clip_count: int) -> Edit:
         titles.append(Title(text=_text(item.get("text"), f"title {i}.text"), start=start,
                             end=_number(item.get("end", start + 2), f"title {i}.end", start + 0.2, MAX_SECONDS),
                             style=style))
+    upscale = str(raw.get("upscale") or "none")
+    if upscale not in UPSCALERS:
+        raise EditError(f"upscale must be one of {', '.join(UPSCALERS)}")
+    ambience = str(raw.get("ambience") or "none")
+    if ambience not in AMBIENCES:
+        raise EditError(f"ambience must be one of {', '.join(AMBIENCES)}")
     edit = Edit(aspect=aspect, fps=fps, grade=grade, shots=tuple(shots), titles=tuple(titles),
                 label=_text(raw.get("label") or DEFAULT_LABEL, "label") or DEFAULT_LABEL,
-                interpolate=bool(raw.get("interpolate", True)))
+                interpolate=bool(raw.get("interpolate", True)), upscale=upscale, ambience=ambience,
+                sfx=bool(raw.get("sfx", False)))
     if timeline(edit)[-1][1] > MAX_SECONDS:
         raise EditError(f"the cut is longer than {MAX_SECONDS:g} s")
     return edit
@@ -378,6 +406,67 @@ def missing_filters() -> list[str]:
     return [name for name in ("drawtext", "xfade", "lut3d", "minterpolate") if f" {name} " not in listed]
 
 
+def sfx_events(edit: Edit, spans: list[tuple[float, float]]) -> list[tuple[str, float]]:
+    """Where the synthesized hits fall on the timeline (pure): a whoosh into every non-cut transition, an impact on
+    every flash and on every speed ramp (the hero moment)."""
+    events: list[tuple[str, float]] = []
+    if not edit.sfx:
+        return events
+    for shot, (start, _end) in zip(edit.shots, spans, strict=True):
+        if shot.transition not in ("cut", "fade", "black"):
+            events.append(("whoosh", max(0.0, start - 0.3)))
+        if shot.transition == "flash":
+            events.append(("impact", start))
+        if shot.ramp_at is not None:
+            events.append(("impact", start + (shot.ramp_at - shot.start) / shot.speed))
+    return events
+
+
+#: The synthesized hits: a filtered noise swell (whoosh) and a sub-bass thump with a noise crack (impact).
+_HITS = {
+    "whoosh": ("anoisesrc=color=pink:amplitude=0.8:duration=0.7,highpass=f=800,lowpass=f=6000,"
+               "afade=t=in:st=0:d=0.45,afade=t=out:st=0.45:d=0.25,volume=-8dB"),
+    "impact": ("sine=frequency=48:duration=0.9,volume=6dB,afade=t=out:st=0.05:d=0.85[s];"
+               "anoisesrc=color=brown:amplitude=1:duration=0.35,lowpass=f=1800,afade=t=out:st=0.02:d=0.3,volume=-4dB[n];"
+               "[s][n]amix=inputs=2:normalize=0"),
+}
+
+
+def foley_graph(edit: Edit, spans: list[tuple[float, float]], seconds: float) -> str | None:
+    """The ffmpeg filter graph of the synthesized foley track, ending on ``[fx]`` — or None when there is none (pure)."""
+    parts, labels = [], []
+    bed = AMBIENCES[edit.ambience]
+    if bed:
+        parts.append(f"{bed},atrim=0:{seconds:.3f},afade=t=in:d=1,afade=t=out:st={max(0.0, seconds - 1.5):.3f}:d=1.5[bed]")
+        labels.append("[bed]")
+    for i, (kind, at) in enumerate(sfx_events(edit, spans)):
+        chain = _HITS[kind]
+        delay = int(at * 1000)
+        if ";" in chain:  # a multi-source hit: its inner labels made unique, its last stage labelled, then delayed
+            chain = chain.replace("[s]", f"[s{i}]").replace("[n]", f"[n{i}]")
+            parts.append(f"{chain}[h{i}raw]")
+            parts.append(f"[h{i}raw]adelay={delay}|{delay}[h{i}]")
+        else:
+            parts.append(f"{chain},adelay={delay}|{delay}[h{i}]")
+        labels.append(f"[h{i}]")
+    if not labels:
+        return None
+    parts.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,"
+                 f"aformat=channel_layouts=stereo,atrim=0:{seconds:.3f},apad=whole_dur={seconds:.3f}[fx]")
+    return ";".join(parts)
+
+
+def upscale_command(edit: Edit, source: str, output: str, env: dict) -> list[str]:
+    """The SeedVR2 command for one source clip: its short side to 1080 (9:16 → 1080x1920, 16:9 → 1920x1080) (pure)."""
+    home, python = env.get("SEEDVR2_HOME"), env.get("SEEDVR2_PYTHON")
+    if not home or not python:
+        raise EditError("this worker has no video upscaler installed (SEEDVR2_HOME / SEEDVR2_PYTHON)")
+    models = os.path.join(env.get("MEDIA_MODELS_DIR", "/models"), "seedvr2")
+    return [python, os.path.join(home, "inference_cli.py"), source, "--output", output, "--resolution",
+            str(min(edit.size)), "--dit_model", SEEDVR2_DIT, "--model_dir", models, "--batch_size", "5",
+            "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4"]
+
+
 def find_font(env: dict | None = None) -> str:
     source = os.environ if env is None else env
     for candidate in (source.get("MEDIA_FONT_FILE"), *FONT_CANDIDATES):
@@ -419,6 +508,14 @@ def cut(clips: list[str], edit: Edit, output_path: str, provenance: dict | None 
         if edit.grade != "none":
             with open(os.path.join(staging, "grade.cube"), "w", encoding="utf-8") as handle:
                 handle.write(grade_cube(edit.grade))
+        upscaled = {}
+        if edit.upscale == "seedvr2":
+            for index in sorted({shot.clip for shot in edit.shots}):
+                target = os.path.join(staging, f"up-{index:02d}.mp4")
+                _run_in(upscale_command(edit, os.path.abspath(clips[index]), target, dict(os.environ)),
+                        os.environ.get("SEEDVR2_HOME", staging))
+                upscaled[index] = target
+        clips = [upscaled.get(i, path) for i, path in enumerate(clips)]
         segments, durations = [], []
         for i, shot in enumerate(edit.shots):
             segment = os.path.join(staging, f"shot-{i:02d}.mp4")
@@ -430,18 +527,24 @@ def cut(clips: list[str], edit: Edit, output_path: str, provenance: dict | None 
             durations.append(_probe_seconds(segment))
         spans = timeline(edit)
         graph = join_filter(edit, durations) + ";[joined]" + ",".join(text_filters(edit, spans, font, staging)) + "[out]"
+        length = spans[-1][1]
+        fx = foley_graph(edit, spans, length)
+        audio = ["-map", "[fx]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] if fx else []
+        if fx:
+            graph += ";" + fx
         command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
         for segment in segments:
             command += ["-i", segment]
-        command += ["-filter_complex", graph, "-map", "[out]", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                    "-pix_fmt", "yuv420p", "-r", str(edit.fps), *metadata_args(edit, provenance),
+        command += ["-filter_complex", graph, "-map", "[out]", *audio, "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+                    "-pix_fmt", "yuv420p", "-r", str(edit.fps), "-t", f"{length:.3f}", *metadata_args(edit, provenance),
                     "-movflags", "+faststart", output_path]
         _run_in(command, staging)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     width, height = edit.size
     return {"durationSeconds": round(_probe_seconds(output_path), 3), "width": width, "height": height,
-            "shots": len(edit.shots), "grade": edit.grade, "fps": edit.fps}
+            "shots": len(edit.shots), "grade": edit.grade, "fps": edit.fps, "upscale": edit.upscale,
+            "ambience": edit.ambience, "sfx": len(sfx_events(edit, timeline(edit)))}
 
 
 def _run_in(command: list[str], cwd: str) -> None:
