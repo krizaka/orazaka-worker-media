@@ -300,3 +300,11 @@ class TestCinemaI2V(unittest.TestCase):
         main = _main()
         self.assertEqual("Wan", main.MODEL_REGISTRY["wan2.2-i2v-a14b"])
         self.assertGreaterEqual(main.MODEL_MEMORY_GB["wan2.2-i2v-a14b"], 64)
+
+
+class TestTheLoraBackendIsInstalled(unittest.TestCase):
+    def test_a_model_with_a_lora_pair_has_peft_in_the_cuda_requirements(self):
+        # diffusers' load_lora_weights() needs the PEFT backend: without it the first 4-step shot failed (HTTP 500).
+        requirements = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements-cuda.txt")).read()
+        needs = any(m.lora for m in video_models.video_models().values())
+        self.assertTrue(not needs or "peft==" in requirements)
