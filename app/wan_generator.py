@@ -73,6 +73,8 @@ def should_offload(model: VideoModel, total_vram_gb: float, env: dict | None = N
 
 def _resident_name(model: VideoModel, from_image: bool) -> str:
     """What `_pipe_name` holds: a model's text pipeline and its image pipeline are two residents."""
+    if model.pipeline == "ltx":
+        return model.name
     return f"{model.name}:image" if from_image else model.name
 
 
@@ -92,6 +94,8 @@ def _load(model: VideoModel, from_image: bool = False):
     first latent frame on the photo (no CLIP image encoder, no second transformer).
     """
     global _pipe, _pipe_name  # noqa: PLW0603 — one resident pipeline per process, by design
+    if model.pipeline == "ltx":
+        return _load_ltx(model)
     torch = _torch()
     from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanPipeline  # noqa: PLC0415
 
@@ -185,6 +189,68 @@ def _load_lora(pipe, model: VideoModel) -> None:
         print(f"[wan] LoRA {filename} on {'transformer_2' if second else 'transformer'}", flush=True)
 
 
+def _load_ltx(model: VideoModel):
+    """Loads LTX-Video (diffusers' LTXConditionPipeline) from the local cache, evicting whichever pipeline was resident.
+
+    One pipeline serves text and image: a still is a condition on the first frame. It stays on the card when the card holds it.
+    """
+    global _pipe, _pipe_name  # noqa: PLW0603
+    torch = _torch()
+    from diffusers import LTXConditionPipeline  # noqa: PLC0415
+
+    if _pipe is not None:
+        print(f"[ltx] evicting {_pipe_name}", flush=True)
+        _pipe = None
+        _pipe_name = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    device = _device()
+    started = time.time()
+    pipe = LTXConditionPipeline.from_pretrained(model.repo, revision=model.revision, torch_dtype=torch.bfloat16, local_files_only=True)
+    total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3) if device == "cuda" else 0.0
+    if device == "cuda" and should_offload(model, total_gb):
+        pipe.enable_model_cpu_offload()
+    else:
+        pipe.to(device)
+    if hasattr(pipe.vae, "enable_tiling"):
+        pipe.vae.enable_tiling()
+    print(f"[ltx] {model.name} loaded in {time.time() - started:.0f}s", flush=True)
+    _pipe = pipe
+    _pipe_name = model.name
+    return pipe
+
+
+def _run_ltx(pipe, model: VideoModel, prompt, negative, width, height, num_frames, steps, generator, image, focus, progress_callback):
+    """One LTX generation: the still (cut to the frame's aspect) conditions frame 0, the distilled settings of the model do the rest."""
+    import tempfile  # noqa: PLC0415
+
+    from diffusers.pipelines.ltx.pipeline_ltx_condition import LTXVideoCondition  # noqa: PLC0415
+    from diffusers.utils import export_to_video, load_video  # noqa: PLC0415
+
+    conditions = None
+    with tempfile.TemporaryDirectory(prefix="orazaka-ltx-") as scratch:
+        if image is not None:
+            start = os.path.join(scratch, "start.mp4")
+            export_to_video([crop_to_aspect(image, width, height, focus)], start, fps=model.fps)
+            conditions = [LTXVideoCondition(video=load_video(start), frame_index=0)]
+        return pipe(
+            conditions=conditions,
+            prompt=prompt,
+            negative_prompt=negative,
+            width=width,
+            height=height,
+            num_frames=num_frames,
+            num_inference_steps=steps,
+            guidance_scale=model.guidance,
+            decode_timestep=0.05,
+            decode_noise_scale=0.025,
+            generator=generator,
+            output_type="pil",
+            callback_on_step_end=progress_callback,
+        ).frames[0]
+
+
 def _is_out_of_memory(failure: BaseException) -> bool:
     """Whether a CUDA run died for want of memory — the one failure a smaller size can answer."""
     torch = _torch()
@@ -218,8 +284,8 @@ def generate_wan_frames(
         InvalidVideoRequest: a photo for a model that cannot start from one.
     """
     model = find(model_name)
-    if model.pipeline != "wan":
-        raise RuntimeError(f"model '{model_name}' is not a Wan model")
+    if model.pipeline not in ("wan", "ltx"):
+        raise RuntimeError(f"model '{model_name}' is not a diffusers video model")
     from_image = image is not None
     if model.requires_image and not from_image:
         raise InvalidVideoRequest(
@@ -240,6 +306,10 @@ def generate_wan_frames(
         started = time.time()
         extra = {"image": crop_to_aspect(image, w, h, focus)} if from_image else {}
         try:
+            if model.pipeline == "ltx":
+                frames = _run_ltx(pipe, model, prompt, negative_prompt or DEFAULT_NEGATIVE_PROMPT, w, h, num_frames, steps, generator, image, focus, progress_callback)
+                print(f"[ltx] {model_name}{' (from a photo)' if from_image else ''} {w}x{h} {len(frames)} frames, {steps} steps, seed {seed}: {time.time() - started:.0f}s", flush=True)
+                return list(frames)
             output = pipe(
                 prompt=prompt,
                 negative_prompt=negative_prompt or DEFAULT_NEGATIVE_PROMPT,

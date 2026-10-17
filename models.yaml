@@ -107,6 +107,32 @@ video:
     downloadGb: 116
     hardware: [cuda]
 
+  # LTX-Video 0.9.8 13B distilled (Lightricks) — the fast model of the bake-off (docs/_generated/MEASURED_RUNS.md): a 5 s clip at
+  # 1216x704 (or 704x1216) and 24 fps in 8 steps without guidance, about 14 s on an H100 and 39 GB of VRAM, from a still or from text.
+  # Licence: the LTX-Video Open Weights License 0.X (grant, no revenue clause — unlike LTX-2's community licence, which is not used).
+  # Frames are counted 8k+1; sizes are multiples of 32.
+  ltx-video-0.9.8-13b-distilled:
+    label: "LTX-Video 0.9.8 13B distilled"
+    licence: LTX-Video-Open-Weights-0.X
+    licenceUrl: https://huggingface.co/Lightricks/LTX-Video-0.9.8-13B-distilled/blob/main/LTX-Video-Open-Weights-License-0.X.txt
+    pipeline: ltx
+    repo: Lightricks/LTX-Video-0.9.8-13B-distilled
+    revision: 7c64400e1861cc0d7b98d570a1926d5408ec60cd
+    imageToVideo: true
+    fps: 24
+    maxFrames: 121          # 8k+1: 121 = 5 s at 24 fps
+    steps: 8
+    guidance: 1.0           # distilled: no classifier-free guidance
+    multiple: 32
+    sizes:
+      "16:9": [1216, 704]
+      "9:16": [704, 1216]
+      "1:1": [768, 768]
+    vramGb: 39
+    ramGb: 32
+    downloadGb: 45
+    hardware: [cuda]
+
   # Wan 2.1 T2V 1.3B — the dev video model of the GPU droplet `small` (RTX 4000 Ada, 20 GB). 480p
   # class (480x832 vertical) at 16 fps. Its text encoder is the same umt5-xxl as Wan 2.2's, read in
   # bf16 from the 5B's repository: 11.4 GB instead of the 22.7 GB float32 copy its own repository holds.

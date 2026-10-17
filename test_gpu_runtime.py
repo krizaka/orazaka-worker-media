@@ -56,7 +56,7 @@ class TestAspect(unittest.TestCase):
             self.assertEqual(0, width % model.multiple, model.name)
             self.assertEqual(0, height % model.multiple, model.name)
             ratio = height / width
-            self.assertAlmostEqual(16 / 9, ratio, delta=0.05, msg=model.name)
+            self.assertAlmostEqual(16 / 9, ratio, delta=0.06, msg=model.name)  # LTX is trained at 704x1216 (1.73)
 
     def test_wan_sizes_are_the_ones_it_was_trained_at(self):
         self.assertEqual((704, 1280), video_models.find("wan2.2-ti2v-5b").size_for("9:16"))
@@ -106,8 +106,9 @@ class TestModelRouting(unittest.TestCase):
         manifest = video_models.load_manifest()
         for name, spec in manifest["video"].items():
             # OpenRAIL-M permits commercial use (with use restrictions): AnimateDiff Lightning's card says so.
-            self.assertIn(spec["licence"], {"Apache-2.0", "MIT", "CreativeML OpenRAIL-M"}, name)
-            if spec["pipeline"] == "wan":
+            # The LTX-Video Open Weights License 0.X grants commercial use with no revenue clause (read in the model's licence file).
+            self.assertIn(spec["licence"], {"Apache-2.0", "MIT", "CreativeML OpenRAIL-M", "LTX-Video-Open-Weights-0.X"}, name)
+            if spec["pipeline"] in ("wan", "ltx"):
                 self.assertRegex(spec["revision"], r"^[0-9a-f]{40}$", name)
 
     def test_the_http_pipeline_registers_every_wan_model(self):

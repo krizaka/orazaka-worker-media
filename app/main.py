@@ -46,6 +46,7 @@ MODEL_REGISTRY: Dict[str, str] = {
     "wan2.2-ti2v-5b": "Wan",
     "wan2.1-t2v-1.3b": "Wan",
     "wan2.2-t2v-a14b": "Wan",  # the 720p A14B, run here on an 80 GB card (models.yaml `hero`)
+    "ltx-video-0.9.8-13b-distilled": "Wan",  # "Wan" is this worker's label for the diffusers video generators (app/wan_generator.py): LTX is one
     "wan2.2-i2v-a14b": "Wan",  # the shots of a cinematic short, from their keyframes (models.yaml `cinema`, ADR-080)
     # Served by a provider, routed by Orazaka (app/remote_video.py): nothing runs on this host.
     "wan2-2-t2v-a14b": "Remote",

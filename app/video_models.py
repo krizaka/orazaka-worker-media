@@ -136,6 +136,9 @@ class VideoModel:
         if self.pipeline == "wan":
             frames = ((frames - 1) // 4) * 4 + 1
             frames = max(5, min(frames, self.max_frames))
+        elif self.pipeline == "ltx":  # LTX counts frames 8k + 1
+            frames = ((frames - 1) // 8) * 8 + 1
+            frames = max(9, min(frames, self.max_frames))
         return frames
 
 
