@@ -47,6 +47,7 @@ from app import (
     sound_generators,
     video_models,
 )
+from app import cut as film
 from app.composer import compose
 from app.registration import load_declaration, start_background_registration
 from app.telemetry import (
@@ -364,14 +365,63 @@ def _resolve_owned_asset(upload_root: str, user_id: str, candidate: str):
     return None
 
 
+def _as_list(value) -> list:
+    """A list input as the interpreter renders it: a list, a JSON array, or a comma list."""
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value or "").strip()
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _cut(job: dict) -> tuple:
+    """The cut of a cinematic short (ADR-080): the actor's own clips and an edit decision list → one film.
+
+    ``clips`` are what earlier Studio steps returned (``/api/v1/assets/<job>/<file>``, or an asset id), resolved
+    with the same ownership rule as a sound's video: another actor's clip is *not found*. ``edit`` is checked by
+    ``app.cut.parse_edit`` before a frame is touched; an edit that cannot be made is the caller's to fix.
+    """
+    payload = job.get("payload") or {}
+    references = _as_list(payload.get("clips"))
+    if not references:
+        raise InvalidJobPayload("the cut has no clips")
+    try:
+        edit = film.parse_edit(payload.get("edit") or "{}", len(references))
+    except film.EditError as bad:
+        raise InvalidJobPayload(str(bad)) from bad
+    upload_root = _upload_root()
+    user_id = job.get("userId")
+    output_path, public_url = _output_paths(job["userId"], job["jobId"])
+    with tempfile.TemporaryDirectory(prefix="orz-cut-in-") as scratch:
+        readable = []
+        for i, reference in enumerate(references):
+            found = _resolve_owned_output(upload_root, user_id, reference, scratch)
+            if not found:
+                raise InvalidJobPayload(f"clip {i} was not found among your files")
+            readable.append(_materialise(found, scratch))
+        send_progress_update(job["jobId"], 10, phase="cutting")
+        metrics = film.cut(readable, edit, output_path, provenance={"clips": len(readable)})
+    url = _store(output_path, job, "video.mp4", "video/mp4", public_url)
+    result = {"url": url, "assetId": url, "format": "mp4", "metrics": metrics}
+    return result, extract_consumption(metrics)
+
+
 def _compose(job: dict) -> tuple:
-    """Assembles a Studio run's stills (and optional voiceover) into a vertical MP4.
+    """Assembles a Studio run's stills (and optional voiceover) into a vertical MP4 — or, given ``clips``, cuts a film.
 
     The payload arrives with every template already rendered by the interpreter,
     so this reads plain values and never interprets a blueprint.
     """
     job_id = job["jobId"]
     payload = job.get("payload") or {}
+    if payload.get("clips"):
+        return _cut(job)
 
     photos = payload.get("photos")
     if isinstance(photos, str):

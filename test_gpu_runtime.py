@@ -171,14 +171,14 @@ class TestSdServerLine(unittest.TestCase):
         from app import fetch_models
 
         small = fetch_models.plan("small")
-        repos = {repo: patterns for repo, _rev, patterns in small["hf"]}
+        repos = {repo: patterns for repo, _rev, patterns, _cache in small["hf"]}
         # The small profile serves the 5B too (image to video on 20 GB, with offload): its whole repo is fetched,
         # and the 1.3B still borrows the 5B's text encoder rather than downloading its own float32 copy.
         self.assertIn("text_encoder/*", repos["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
         self.assertIn("transformer/*", repos["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
         self.assertNotIn("text_encoder/*", repos["Wan-AI/Wan2.1-T2V-1.3B-Diffusers"])
         self.assertEqual(3, len(small["files"]))
-        big = {repo: patterns for repo, _rev, patterns in fetch_models.plan("big")["hf"]}
+        big = {repo: patterns for repo, _rev, patterns, _cache in fetch_models.plan("big")["hf"]}
         self.assertIn("transformer/*", big["Wan-AI/Wan2.2-TI2V-5B-Diffusers"])
 
     def test_a_file_that_does_not_match_its_checksum_is_never_used(self):

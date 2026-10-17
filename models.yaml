@@ -27,6 +27,7 @@ video:
     # Text and image to video (diffusers WanImageToVideoPipeline with expand_timesteps, the checkpoint's own
     # config): a starting photo is cut to the aspect around its subject, never letterboxed.
     imageToVideo: true
+    expandTimesteps: true   # the 5B conditions its first latent frame on the photo (the checkpoint's own config)
     sizes:
       "9:16": [704, 1280]
       "16:9": [1280, 704]
@@ -66,6 +67,44 @@ video:
     vramGb: 70
     ramGb: 64
     downloadGb: 126         # the checkpoint's fp32 shards (two experts x 57 GB + the umt5 text encoder 11 GB)
+    hardware: [cuda]
+
+  # Wan 2.2 I2V A14B — the shots of a cinematic short (ADR-080, krizaka/orazaka): every shot starts from its keyframe
+  # (a FLUX still of the shot list), so a character and a look carry from shot to shot. Two 14B experts like the T2V,
+  # driven in FOUR steps by lightx2v's distilled LoRAs (Apache-2.0): ~1.5 min a 720p clip on an 80 GB card instead of
+  # ~18 min at 40 steps. It starts from a photo or not at all. Its weights (115 GB of fp32 shards) live on the pod's
+  # container disk (`cache: scratch`), fetched at the pod's start, not on the shared models volume: the volume is full
+  # with the T2V experts and a bigger one is a monthly cost. The text encoder is the 5B's bf16 umt5-xxl.
+  wan2.2-i2v-a14b:
+    label: "Wan 2.2 I2V A14B (720p, 4-step distill)"
+    licence: Apache-2.0
+    licenceUrl: https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B-Diffusers
+    pipeline: wan
+    repo: Wan-AI/Wan2.2-I2V-A14B-Diffusers
+    revision: 596658fd9ca6b7b71d5057529bbf319ecbc61d74
+    textEncoderFrom: wan2.2-ti2v-5b
+    cache: scratch
+    imageToVideo: true
+    requiresImage: true
+    fps: 16
+    maxFrames: 81           # 4k+1: 81 = 5 s at 16 fps
+    steps: 4
+    guidance: 1.0           # a distilled model takes no classifier-free guidance (one pass per step)
+    guidanceTwo: 1.0
+    multiple: 16
+    sizes:
+      "16:9": [1280, 720]
+      "9:16": [720, 1280]
+      "1:1": [960, 960]
+    lora:
+      repo: lightx2v/Wan2.2-Distill-Loras
+      revision: 57adea585d1d21085e2dfc91ce3c7b646cdd9345
+      licence: Apache-2.0
+      high: wan2.2_i2v_A14b_high_noise_lora_rank64_lightx2v_4step_1022.safetensors
+      low: wan2.2_i2v_A14b_low_noise_lora_rank64_lightx2v_4step_1022.safetensors
+    vramGb: 70
+    ramGb: 64
+    downloadGb: 116
     hardware: [cuda]
 
   # Wan 2.1 T2V 1.3B — the dev video model of the GPU droplet `small` (RTX 4000 Ada, 20 GB). 480p
@@ -208,6 +247,13 @@ profiles:
   hero:
     video: [wan2.2-t2v-a14b, wan2.2-ti2v-5b]
     defaultVideo: wan2.2-ti2v-5b
+  # A cinematic short (ADR-080): FLUX keyframes (sd-server) and the 4-step I2V A14B shots on one 80 GB card, and the
+  # music bed. The image engine holds ~10 GB; the offloaded A14B keeps one expert (~29 GB) on the card at a time.
+  cinema:
+    video: [wan2.2-i2v-a14b]
+    defaultVideo: wan2.2-i2v-a14b
+    image: flux-2-klein-4b
+    sound: [acestep-v15-xl-turbo]
   small:
     video: [wan2.2-ti2v-5b, wan2.1-t2v-1.3b]
     defaultVideo: wan2.1-t2v-1.3b

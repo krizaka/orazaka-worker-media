@@ -236,7 +236,7 @@ class TestA14bLocal(unittest.TestCase):
         from app import fetch_models
 
         plan = fetch_models.plan("hero")
-        repos = {repo: patterns for repo, _rev, patterns in plan["hf"]}
+        repos = {repo: patterns for repo, _rev, patterns, _cache in plan["hf"]}
         self.assertIn("transformer/*", repos["Wan-AI/Wan2.2-T2V-A14B-Diffusers"])
         self.assertEqual([], plan["files"])
 
@@ -251,3 +251,52 @@ class TestA14bLocal(unittest.TestCase):
         ):
             wan_generator.generate_wan_frames("wan2.2-t2v-a14b", "x", 1280, 720, 5, 4, 7)
         self.assertEqual((4.0, 3.0), (pipe.calls[0]["guidance_scale"], pipe.calls[0]["guidance_scale_2"]))
+
+
+class TestCinemaI2V(unittest.TestCase):
+    """The shots of a cinematic short: Wan 2.2 I2V A14B in four distilled steps, from a keyframe (ADR-080)."""
+
+    def test_it_starts_from_a_photo_only_in_four_steps_without_guidance(self):
+        model = video_models.find("wan2.2-i2v-a14b")
+        self.assertTrue(model.image_to_video and model.requires_image)
+        self.assertFalse(model.expand_timesteps)  # the 5B's conditioning, not the A14B's
+        self.assertTrue(video_models.find("wan2.2-ti2v-5b").expand_timesteps)
+        self.assertEqual((4, 1.0, 1.0), (model.steps, model.guidance, model.guidance_two))
+        self.assertEqual((720, 1280), model.size_for("9:16"))
+        self.assertEqual((1280, 720), model.size_for("16:9"))
+
+    def test_a_text_only_job_is_refused_before_a_gpu_second(self):
+        with self.assertRaises(video_models.InvalidVideoRequest):
+            wan_generator.generate_wan_frames("wan2.2-i2v-a14b", "x", 720, 1280, 5, 4, 7)
+
+    def test_its_weights_are_read_from_the_scratch_disk_and_the_lora_pair_goes_to_both_experts(self):
+        model = video_models.find("wan2.2-i2v-a14b")
+        self.assertEqual("/s/hf/hub", video_models.hub_cache(model, {"MEDIA_SCRATCH_DIR": "/s"}))
+        self.assertIsNone(video_models.hub_cache(video_models.find("wan2.2-ti2v-5b"), {}))
+        plan = wan_generator.lora_plan(model)
+        self.assertEqual([False, True], [second for _f, _a, second in plan])
+        self.assertIn("high_noise", plan[0][0])
+
+    def test_the_cinema_profile_fetches_the_experts_the_loras_and_the_image_engine(self):
+        from app import fetch_models
+
+        work = fetch_models.plan("cinema")
+        by_repo = {repo: (patterns, cache) for repo, _rev, patterns, cache in work["hf"]}
+        patterns, cache = by_repo["Wan-AI/Wan2.2-I2V-A14B-Diffusers"]
+        self.assertEqual("scratch", cache)
+        self.assertIn("transformer_2/*", patterns)
+        self.assertNotIn("text_encoder/*", patterns)  # the 5B's bf16 encoder is borrowed
+        self.assertEqual("volume", by_repo["Wan-AI/Wan2.2-TI2V-5B-Diffusers"][1])
+        self.assertEqual(2, len(by_repo["lightx2v/Wan2.2-Distill-Loras"][0]))
+        self.assertEqual(3, len(work["files"]))  # FLUX.2 klein for the keyframes
+
+    def test_the_hero_fetch_includes_the_low_noise_expert(self):
+        from app import fetch_models
+
+        repos = {repo: patterns for repo, _rev, patterns, _cache in fetch_models.plan("hero")["hf"]}
+        self.assertIn("transformer_2/*", repos["Wan-AI/Wan2.2-T2V-A14B-Diffusers"])
+
+    def test_it_is_registered(self):
+        main = _main()
+        self.assertEqual("Wan", main.MODEL_REGISTRY["wan2.2-i2v-a14b"])
+        self.assertGreaterEqual(main.MODEL_MEMORY_GB["wan2.2-i2v-a14b"], 64)
