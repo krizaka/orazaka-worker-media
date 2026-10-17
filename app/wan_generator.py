@@ -20,6 +20,7 @@ from app.video_models import (
     VideoModel,
     crop_to_aspect,
     find,
+    hub_cache,
     load_manifest,
 )
 
@@ -102,6 +103,8 @@ def _load(model: VideoModel, from_image: bool = False):
     device = _device()
     started = time.time()
     common = {"revision": model.revision, "local_files_only": True}
+    if hub_cache(model):
+        common["cache_dir"] = hub_cache(model)
     vae = AutoencoderKLWan.from_pretrained(
         model.repo, subfolder="vae", torch_dtype=torch.float32, **common
     )
@@ -124,7 +127,8 @@ def _load(model: VideoModel, from_image: bool = False):
             model.repo,
             vae=vae,
             torch_dtype=torch.bfloat16,
-            expand_timesteps=True,
+            # The 5B's own config; the A14B I2V conditions through its 36-channel input instead.
+            **({"expand_timesteps": True} if model.expand_timesteps else {}),
             **common,
             **extra,
         )
@@ -132,6 +136,8 @@ def _load(model: VideoModel, from_image: bool = False):
         pipe = WanPipeline.from_pretrained(
             model.repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra
         )
+    if model.lora:
+        _load_lora(pipe, model)
     total_gb = 0.0
     if device == "cuda":
         total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
@@ -147,6 +153,33 @@ def _load(model: VideoModel, from_image: bool = False):
     _pipe = pipe
     _pipe_name = _resident_name(model, from_image)
     return pipe
+
+
+def lora_plan(model: VideoModel) -> list[tuple[str, str, bool]]:
+    """The LoRA files a model's pipeline takes: ``(file, adapter name, into the second expert)``, high-noise first."""
+    if not model.lora:
+        return []
+    plan = [(model.lora["high"], "distill", False)]
+    if model.lora.get("low"):
+        plan.append((model.lora["low"], "distill_2", True))
+    return plan
+
+
+def _load_lora(pipe, model: VideoModel) -> None:
+    """Puts the distillation LoRAs on the two experts (high noise → ``transformer``, low → ``transformer_2``).
+
+    The files were fetched with the weights (``app.fetch_models``) and are read from the cache only. A LoRA that
+    does not load fails the model's load: a 4-step schedule on an undistilled expert makes noise, not a clip (§12).
+    """
+    from huggingface_hub import hf_hub_download  # noqa: PLC0415
+
+    spec = model.lora
+    for filename, adapter, second in lora_plan(model):
+        path = hf_hub_download(
+            spec["repo"], filename, revision=spec.get("revision"), local_files_only=True, cache_dir=hub_cache(model)
+        )
+        pipe.load_lora_weights(path, adapter_name=adapter, **({"load_into_transformer_2": True} if second else {}))
+        print(f"[wan] LoRA {filename} on {'transformer_2' if second else 'transformer'}", flush=True)
 
 
 def _is_out_of_memory(failure: BaseException) -> bool:
@@ -185,6 +218,10 @@ def generate_wan_frames(
     if model.pipeline != "wan":
         raise RuntimeError(f"model '{model_name}' is not a Wan model")
     from_image = image is not None
+    if model.requires_image and not from_image:
+        raise InvalidVideoRequest(
+            f"model '{model_name}' starts from a photo: give it a starting image (a keyframe)"
+        )
     if from_image and not model.image_to_video:
         raise InvalidVideoRequest(
             f"model '{model_name}' makes video from text only; leave the starting image empty "

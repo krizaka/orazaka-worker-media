@@ -23,33 +23,41 @@ from app.video_models import load_manifest
 
 #: What a Wan pipeline reads from its repository. The text encoder is skipped when the model borrows
 #: its donor's (``textEncoderFrom``), which is the whole point of declaring it.
-_WAN_PARTS = ["model_index.json", "scheduler/*", "tokenizer/*", "transformer/*", "vae/*"]
+_WAN_PARTS = ["model_index.json", "scheduler/*", "tokenizer/*", "transformer/*", "transformer_2/*", "vae/*"]
 
 
 def plan(profile: str, manifest: dict | None = None) -> dict:
-    """What a profile needs: ``{"hf": [(repo, revision, patterns)], "files": [file specs]}``.
+    """What a profile needs: ``{"hf": [(repo, revision, patterns, cache)], "files": [file specs]}``.
+
+    ``cache`` is ``volume`` (the shared models volume) or ``scratch`` (the host's own disk, ``cache: scratch``).
+    A model's distillation LoRAs (``lora``) are fetched beside it, into the same cache.
 
     Raises:
         KeyError: for a profile ``models.yaml`` does not declare.
     """
     manifest = manifest or load_manifest()
     declared = manifest["profiles"][profile]
-    snapshots: dict[tuple[str, str], set[str]] = {}
+    snapshots: dict[tuple[str, str, str], set[str]] = {}
     for name in declared["video"]:
         spec = manifest["video"][name]
+        cache = spec.get("cache") or "volume"
         parts = set(_WAN_PARTS)
         if spec.get("textEncoderFrom"):
             donor = manifest["video"][spec["textEncoderFrom"]]
-            snapshots.setdefault((donor["repo"], donor["revision"]), set()).update(
+            snapshots.setdefault((donor["repo"], donor["revision"], donor.get("cache") or "volume"), set()).update(
                 {"text_encoder/*", "tokenizer/*"}
             )
         else:
             parts.add("text_encoder/*")
-        snapshots.setdefault((spec["repo"], spec["revision"]), set()).update(parts)
+        snapshots.setdefault((spec["repo"], spec["revision"], cache), set()).update(parts)
+        lora = spec.get("lora")
+        if lora:
+            files = {lora["high"], *([lora["low"]] if lora.get("low") else [])}
+            snapshots.setdefault((lora["repo"], lora["revision"], cache), set()).update(files)
     # A profile without an image engine (`hero`: an 80 GB card running video only) fetches no image files.
     files = list(manifest["image"][declared["image"]]["files"]) if declared.get("image") else []
     return {
-        "hf": [(repo, revision, sorted(patterns)) for (repo, revision), patterns in snapshots.items()],
+        "hf": [(repo, revision, sorted(patterns), cache) for (repo, revision, cache), patterns in snapshots.items()],
         "files": files,
     }
 
@@ -97,15 +105,16 @@ def fetch(profile: str, models_dir: Path) -> None:
 
     work = plan(profile)
     hf_home = models_dir / "hf"
-    for repo, revision, patterns in work["hf"]:
+    scratch = Path(os.environ.get("MEDIA_SCRATCH_DIR", "/var/lib/orazaka-scratch")) / "hf"
+    for repo, revision, patterns, cache in work["hf"]:
         started = time.time()
-        print(f"[fetch] {repo}@{revision[:8]} {patterns}", flush=True)
+        print(f"[fetch] {repo}@{revision[:8]} {patterns} → {cache}", flush=True)
         snapshot_download(
             repo_id=repo,
             revision=revision,
             allow_patterns=patterns,
-            cache_dir=str(hf_home / "hub"),
-            max_workers=8,
+            cache_dir=str((scratch if cache == "scratch" else hf_home) / "hub"),
+            max_workers=16,
         )
         print(f"[fetch] {repo} ready in {time.time() - started:.0f}s", flush=True)
     for spec in work["files"]:

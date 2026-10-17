@@ -82,6 +82,15 @@ class VideoModel:
     #: Smaller sizes of the same aspect, tried in order when the card runs out of memory at the one
     #: before (``fallbackSizes``): 1280x704 on a 48 GB card, then what a 20 GB card can hold.
     fallback_sizes: dict = field(default_factory=dict)
+    #: Wan 2.2 TI2V 5B conditions its first latent frame on the photo (``expandTimesteps``); the A14B I2V does not.
+    expand_timesteps: bool = False
+    #: A model that only starts from a photo (``requiresImage``: the I2V A14B): a text-only job is refused by name.
+    requires_image: bool = False
+    #: Where its weights live: ``volume`` (the shared models volume, default) or ``scratch`` (the host's own disk,
+    #: fetched at its start: weights too big to keep on a volume whose size is a monthly cost).
+    cache: str = "volume"
+    #: A distillation LoRA pair (``lora``: repo, revision, ``high`` and ``low`` file for the two experts), or None.
+    lora: dict | None = None
 
     def size_ladder(self, aspect: str | None, width=None, height=None) -> list[tuple[int, int]]:
         """The sizes to try for a request, the one asked first. An explicit size has no ladder."""
@@ -181,8 +190,22 @@ def video_models(manifest: dict | None = None) -> dict[str, VideoModel]:
                 ratio: tuple(tuple(size) for size in ladder)
                 for ratio, ladder in (spec.get("fallbackSizes") or {}).items()
             },
+            expand_timesteps=bool(spec.get("expandTimesteps", False)),
+            requires_image=bool(spec.get("requiresImage", False)),
+            cache=str(spec.get("cache") or "volume"),
+            lora=dict(spec["lora"]) if spec.get("lora") else None,
         )
     return models
+
+
+def hub_cache(model: VideoModel, env: dict | None = None) -> str | None:
+    """The Hugging Face cache a model's weights are read from: ``None`` for the shared volume (``HF_HUB_CACHE``),
+    else ``$MEDIA_SCRATCH_DIR/hf/hub`` for a model kept on the host's own disk (``cache: scratch``)."""
+    if model.cache != "scratch":
+        return None
+    source = os.environ if env is None else env
+    root = (source.get("MEDIA_SCRATCH_DIR") or "/var/lib/orazaka-scratch").rstrip("/")
+    return f"{root}/hf/hub"
 
 
 def find(name: str, manifest: dict | None = None) -> VideoModel:

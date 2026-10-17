@@ -46,6 +46,7 @@ MODEL_REGISTRY: Dict[str, str] = {
     "wan2.2-ti2v-5b": "Wan",
     "wan2.1-t2v-1.3b": "Wan",
     "wan2.2-t2v-a14b": "Wan",  # the 720p A14B, run here on an 80 GB card (models.yaml `hero`)
+    "wan2.2-i2v-a14b": "Wan",  # the shots of a cinematic short, from their keyframes (models.yaml `cinema`, ADR-080)
     # Served by a provider, routed by Orazaka (app/remote_video.py): nothing runs on this host.
     "wan2-2-t2v-a14b": "Remote",
 }
@@ -68,6 +69,7 @@ MODEL_MEMORY_GB: Dict[str, int] = {
     "wan2.2-ti2v-5b": 24,
     "wan2.1-t2v-1.3b": 16,
     "wan2.2-t2v-a14b": 64,  # two bf16 experts (~57 GB) + the text encoder, offloaded
+    "wan2.2-i2v-a14b": 64,  # the same two experts, image to video
 }
 _DEFAULT_MODEL_GB = 12  # conservative estimate for unregistered models
 
@@ -488,6 +490,10 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                             "image empty or choose an image-to-video model"
                         )
                     wan_image = starting_image(payload)
+                elif wan is not None and wan.requires_image:
+                    raise video_models.InvalidVideoRequest(
+                        f"model '{model_name}' starts from a photo: give it a starting image (a keyframe)"
+                    )
                 if not steps and wan is not None:
                     steps = wan.steps
                 if not fps_render and wan is not None:
