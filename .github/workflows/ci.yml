@@ -12,10 +12,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
-  # The shared component pipeline publishes npm packages with provenance (OIDC): a reusable
-  # workflow cannot be granted more than its caller holds, so its absence fails at startup.
-  id-token: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -23,6 +19,12 @@ concurrency:
 
 jobs:
   component:
+    permissions:
+      contents: read
+      packages: write
+      # The shared component pipeline publishes npm packages with provenance (OIDC): a reusable
+      # workflow cannot be granted more than its caller holds, so its absence fails at startup.
+      id-token: write
     uses: krizaka/orazaka/.github/workflows/component.yml@main
     with:
       component: orazaka-worker-media
