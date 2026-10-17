@@ -30,7 +30,10 @@ DEFAULT_NEGATIVE_PROMPT = (
     "artwork, painting, still picture, overall gray, worst quality, low quality, JPEG artifacts, "
     "ugly, deformed, extra fingers, poorly drawn hands, poorly drawn face, disfigured, malformed "
     "limbs, fused fingers, motionless frame, cluttered background, three legs, many people in the "
-    "background, walking backwards"
+    "background, walking backwards, "
+    # What image-to-video adds: the artefacts the Krizaka cinematic kit refuses by default.
+    "morphing, warping, flickering, jittery, unstable geometry, melting, distorted face, extra limbs, "
+    "duplicated objects, watermark, text"
 )
 
 _pipe = None

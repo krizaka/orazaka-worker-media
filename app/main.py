@@ -645,6 +645,9 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
 
                 _record_consumption(metrics, frames, steps, fps_render, req_width, req_height)
                 _record_provenance(metrics, model_name, seed_val, payload.get("aspect"), frames, fps_render)
+                if family == "Wan" and wan_image is not None:
+                    # How much of the starting image the frame kept (a portrait still cut to 16:9 keeps a third): said, never hidden.
+                    metrics["imageKept"] = video_models.kept_fraction(wan_image, int(req_width), int(req_height))
 
                 output_path = payload.get("output_path")
                 if job_id:
