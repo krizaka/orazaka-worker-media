@@ -207,7 +207,8 @@ def _load_ltx(model: VideoModel):
             torch.cuda.empty_cache()
     device = _device()
     started = time.time()
-    pipe = LTXConditionPipeline.from_pretrained(model.repo, revision=model.revision, torch_dtype=torch.bfloat16, local_files_only=True)
+    cache = {"cache_dir": hub_cache(model)} if hub_cache(model) else {}  # `cache: scratch`: the host's own disk
+    pipe = LTXConditionPipeline.from_pretrained(model.repo, revision=model.revision, torch_dtype=torch.bfloat16, local_files_only=True, **cache)
     total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3) if device == "cuda" else 0.0
     if device == "cuda" and should_offload(model, total_gb):
         pipe.enable_model_cpu_offload()

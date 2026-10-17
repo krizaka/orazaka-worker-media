@@ -64,6 +64,25 @@ class TestHighQualityWan(unittest.TestCase):
         self.assertIn("wan2.2-i2v-a14b-hq", video_models.load_manifest()["profiles"]["cinema"]["video"])
 
 
+class TestScratchCache(unittest.TestCase):
+    """LTX's weights are on the host's own disk (`cache: scratch`): the loader must look there, like the I2V A14B's."""
+
+    def test_the_ltx_pipeline_is_loaded_from_the_scratch_cache(self):
+        fake = types.SimpleNamespace(LTXConditionPipeline=MagicMock())
+        torch = MagicMock()
+        torch.cuda.is_available.return_value = False
+        with patch.dict(sys.modules, {"diffusers": fake}), patch.object(wan_generator, "_torch", return_value=torch), patch.object(
+            wan_generator, "_device", return_value="cpu"
+        ), patch.object(wan_generator, "hub_cache", return_value="/var/lib/orazaka-scratch/hf/hub"):
+            wan_generator._pipe = None
+            wan_generator._load(video_models.find(NAME), False)
+        wan_generator._pipe = None
+        wan_generator._pipe_name = None
+        kwargs = fake.LTXConditionPipeline.from_pretrained.call_args.kwargs
+        self.assertEqual("/var/lib/orazaka-scratch/hf/hub", kwargs["cache_dir"])
+        self.assertTrue(kwargs["local_files_only"])
+
+
 class TestKitProfile(unittest.TestCase):
     def test_the_kit_profile_serves_the_bake_off_models_and_flux_stills(self):
         from app import fetch_models
