@@ -14,6 +14,7 @@ import os
 import time
 from typing import Callable, Optional
 
+from app import job_control
 from app.video_models import (
     InvalidVideoRequest,
     VideoModel,
@@ -213,6 +214,11 @@ def generate_wan_frames(
                 callback_on_step_end=progress_callback,
                 **extra,
             )
+        except job_control.JobCancelled:
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise  # the owner stopped it: not a failure, and not a smaller size to try
         except Exception as failure:  # §12: report it, never hide it
             gc.collect()
             if torch.cuda.is_available():

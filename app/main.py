@@ -21,7 +21,7 @@ try:
 except ImportError:
     torch = None
 
-from app import remote_video, video_models
+from app import job_control, remote_video, video_models
 from app.encoder import export_frames_to_video
 from app.generator import generate_video_frames
 from app.telemetry import resource_guard, send_progress_update
@@ -73,6 +73,9 @@ _DEFAULT_MODEL_GB = 12  # conservative estimate for unregistered models
 
 # Serialize heavy media work: at most one model resident / one inference at a time.
 _media_semaphore = threading.Semaphore(1)
+
+#: What the pipeline answers a job its owner stopped (nginx's "client closed request"): not a failure.
+CANCELLED_STATUS = 499
 
 
 def preflight_memory_guard(model_name: str) -> None:
@@ -364,8 +367,13 @@ def run_remote(payload: Dict[str, Any], model_name: str, process=None, generate=
     job_id = payload.get("job_id")
     with resource_guard(process) as metrics:
         if job_id:
-            send_progress_update(job_id, 0)
-        progress = (lambda percent: send_progress_update(job_id, percent)) if job_id else None
+            send_progress_update(job_id, 0, phase="generating")
+
+        def progress(percent):
+            if job_id:
+                job_control.raise_if_cancelled(job_id)
+                send_progress_update(job_id, percent, phase="generating")
+
         video, facts = generate(model, prompt, width, height, seed_val if seed_val >= 0 else None, progress=progress)
         metrics.update(facts)
         metrics["model"] = model_name
@@ -380,7 +388,7 @@ def run_remote(payload: Dict[str, Any], model_name: str, process=None, generate=
         if measured:
             metrics["durationSeconds"] = measured
         if job_id:
-            send_progress_update(job_id, 100)
+            send_progress_update(job_id, 100, phase="uploading")
         return {"status": "success", "output_path": safe_output_path, "metrics": metrics}
 
 
@@ -392,6 +400,8 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
             status, content = 200, body.encode("utf-8")
         except video_models.InvalidVideoRequest as bad:
             status, content = 400, json.dumps({"error": str(bad)}).encode("utf-8")
+        except job_control.JobCancelled as stopped:
+            status, content = CANCELLED_STATUS, json.dumps({"error": str(stopped)}).encode("utf-8")
         except Exception as failure:  # §12: the provider's refusal or failure is the job's failure
             print(f"Error during remote video generation: {failure}", flush=True)
             status, content = 500, str(failure).encode("utf-8")
@@ -502,12 +512,15 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                         fps_render = 14
 
                 if job_id:
-                    send_progress_update(job_id, 0)
-                
+                    job_control.raise_if_cancelled(job_id)
+                    send_progress_update(job_id, 0, phase="loading")
+
                 def progress_cb(pipe_self: Any, step: int, timestep: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
                     if job_id:
+                        # The step boundary: where a cancelled job ends, within one denoising step.
+                        job_control.raise_if_cancelled(job_id)
                         progress = min(int((step + 1) / steps * 100), 100)
-                        send_progress_update(job_id, progress)
+                        send_progress_update(job_id, progress, phase="generating", step=step + 1, steps=int(steps))
                     return kwargs
 
                 duration = payload.get("durationSeconds") or payload.get("video_length") or 2
@@ -601,12 +614,13 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 _record_provenance(metrics, model_name, seed_val, payload.get("aspect"), frames, fps_render)
 
                 output_path = payload.get("output_path")
+                if job_id:
+                    job_control.raise_if_cancelled(job_id)
+                    send_progress_update(job_id, 100, phase="encoding")
                 if output_path:
                     safe_output_path = validate_safe_path(output_path)
                     os.makedirs(os.path.dirname(safe_output_path), exist_ok=True)
                     export_frames_to_video(frames, safe_output_path, fps=fps_render)
-                    if job_id:
-                        send_progress_update(job_id, 100)
                     response_data = {"status": "success", "output_path": safe_output_path, "metrics": metrics}
                 else:
                     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
@@ -630,6 +644,12 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             self.wfile.write(body.encode('utf-8'))
+        except job_control.JobCancelled as stopped:
+            print(f"Video generation stopped: {stopped}", flush=True)
+            self.send_response(CANCELLED_STATUS)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(stopped)}).encode('utf-8'))
         except video_models.InvalidVideoRequest as bad:
             print(f"Refused video request: {bad}", flush=True)
             self.send_response(400)

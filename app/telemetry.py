@@ -43,8 +43,28 @@ def _publish_job_event(routing_key: str, payload: dict) -> None:
         print(f"Failed to send AMQP job event {routing_key} to RabbitMQ: {e}", flush=True)
 
 
-def send_progress_update(job_id: str, progress: int) -> None:
-    _publish_job_event(f"job.{job_id}.progress", {"jobId": job_id, "progress": int(progress)})
+#: What a job is doing right now, in the closed vocabulary the UI words (orazaka-web-client#85).
+PHASES = ("queued", "loading", "generating", "encoding", "uploading")
+
+
+def progress_payload(job_id: str, progress: int, phase=None, step=None, steps=None) -> dict:
+    """The progress event: the percentage, and — when known — the phase and the step n of N."""
+    payload = {"jobId": job_id, "progress": int(progress)}
+    if phase in PHASES:
+        payload["phase"] = phase
+    if isinstance(step, int) and isinstance(steps, int) and steps > 0:
+        payload["step"] = step
+        payload["steps"] = steps
+    return payload
+
+
+def send_progress_update(job_id: str, progress: int, phase=None, step=None, steps=None) -> None:
+    _publish_job_event(f"job.{job_id}.progress", progress_payload(job_id, progress, phase, step, steps))
+
+
+def send_job_cancelled(job_id: str, hold_id=None) -> None:
+    """Terminal event of a job that stopped because its owner asked: it is never billed."""
+    _publish_job_event(f"job.{job_id}.cancelled", _with_reservation({"jobId": job_id}, hold_id))
 
 
 def _with_reservation(payload: dict, hold_id) -> dict:
