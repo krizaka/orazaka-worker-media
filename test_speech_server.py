@@ -16,6 +16,11 @@ class TestSpeechRequest(unittest.TestCase):
             with self.subTest(body), self.assertRaises(s.SpeechRequestError):
                 s.parse_request(json.dumps(body).encode())
 
+    def test_a_passed_through_content_type_is_one_of_ours_never_copied(self):
+        self.assertEqual("image/png", s.safe_type("image/png; charset=binary"))
+        self.assertEqual("application/json", s.safe_type("text/html\r\nSet-Cookie: x=1"))
+        self.assertEqual("application/json", s.safe_type(None))
+
     def test_only_the_speech_path_is_answered_here(self):
         self.assertTrue(s.routes_to_speech("POST", "/v1/audio/speech"))
         self.assertFalse(s.routes_to_speech("POST", "/v1/images/generations"))

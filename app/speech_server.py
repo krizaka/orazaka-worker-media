@@ -86,6 +86,18 @@ def to_mp3(wav: bytes) -> bytes:
     return done.stdout
 
 
+#: The content types a passed-through answer may carry; anything else is sent as JSON's (never a header copied as is).
+PASSED_TYPES = ("application/json", "image/png", "image/jpeg", "image/webp", "text/plain")
+
+
+def safe_type(value: str | None) -> str:
+    """One of PASSED_TYPES, chosen by prefix — never the upstream's string itself (pure)."""
+    for known in PASSED_TYPES:
+        if (value or "").lower().startswith(known):
+            return known
+    return "application/json"
+
+
 class Handler(BaseHTTPRequestHandler):
     upstream = os.environ.get("MEDIA_IMAGE_UPSTREAM", "127.0.0.1:8089")
 
@@ -105,9 +117,9 @@ class Handler(BaseHTTPRequestHandler):
         request = urllib.request.Request(f"http://{self.upstream}{self.path}", data=body, method=self.command, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=900) as response:  # noqa: S310 — the local image engine only
-                self._send(response.status, response.read(), response.headers.get("Content-Type", "application/json"))
+                self._send(response.status, response.read(), safe_type(response.headers.get("Content-Type")))
         except urllib.error.HTTPError as refused:
-            self._send(refused.code, refused.read(), refused.headers.get("Content-Type", "application/json"))
+            self._send(refused.code, refused.read(), safe_type(refused.headers.get("Content-Type")))
         except OSError as down:
             self._send(502, json.dumps({"error": f"image engine unreachable: {down}"}).encode(), "application/json")
 
@@ -124,7 +136,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as failure:  # noqa: BLE001 — reported, never a silent placeholder
             self._send(500, json.dumps({"error": f"speech failed: {failure}"}).encode(), "application/json")
             return
-        self._send(200, body, kind, {"X-Orazaka-Speech-Model": MODEL, "X-Orazaka-Speech-Voice": request["voice"]})
+        # The voice is not echoed in a header (a header is never built from a request's value); the model is a constant.
+        self._send(200, body, kind, {"X-Orazaka-Speech-Model": MODEL})
 
     def do_POST(self) -> None:  # noqa: N802 — http.server's name
         if routes_to_speech(self.command, self.path):
