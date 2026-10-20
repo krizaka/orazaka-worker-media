@@ -292,6 +292,24 @@ sound:
     sampleRate: 44100
     hardware: [mps, cuda]
 
+# The narrator of a cinematic short (orazaka#289, ADR-080 addendum v2): an expressive voice, directed per line by
+# app/voice_direction.py and said by app/zonos_runner.py in its own interpreter (SPEECH_PYTHON). Chosen over Kokoro (flat),
+# Chatterbox (French misses) in a blind A/B; F5-TTS (CC-BY-NC weights) and XTTS-v2 (CPML) refused for their licences.
+narrators:
+  zonos-v0.1-transformer:
+    label: "Zonos v0.1 transformer (expressive narrator: emotion, rate, pitch)"
+    licence: Apache-2.0
+    licenceUrl: https://huggingface.co/Zyphra/Zonos-v0.1-transformer
+    commercial: true
+    repo: Zyphra/Zonos-v0.1-transformer
+    revision: 9fe3dbdc3c703a8cf7141b2d0f550f6d55f67260
+    code: https://github.com/Zyphra/Zonos
+    codeRevision: bc40d98e1e1ab54fc65c483be127a90e3c7c0645
+    # The speaker is a reference recording of a synthetic voice (Kokoro-82M, Apache-2.0), never a real person's.
+    reference: kokoro-82m
+    languages: [en-us, fr-fr]
+    hardware: [cpu, cuda]
+
 # What a GPU host of each size serves. `scripts/gpu-dev.sh start big|small` (krizaka/orazaka) passes
 # the profile; `python -m app.fetch_models <profile>` puts its weights on the models volume once.
 profiles:

@@ -61,9 +61,24 @@ def plan(kind: str, master_size: tuple[int, int], spans: list[tuple[float, float
     return {"crop": f"crop={window}:{height}:{expression}:0", "size": spec["size"], "aspect": spec["aspect"], "master": "1080p"}
 
 
+def text_chain(layout: "cut.Edit", font: str, scratch: str, titles_ass: str | None = None, fontsdir: str | None = None) -> list[str]:
+    """The filters that set a deliverable's text (pure): the film's titles script (``app/titles.py``, libass) when one is
+    given — set for this deliverable's own frame —, else the cut's drawtext layout of ``texts``."""
+    if titles_ass:
+        from app.titles import _filter_path  # noqa: PLC0415
+
+        folder = f":fontsdir='{_filter_path(fontsdir)}'" if fontsdir else ""
+        return [f"ass=filename='{_filter_path(titles_ass)}'{folder}"]
+    return cut.text_filters(layout, [], font, scratch)
+
+
 def deliver(master: str, output: str, kind: str, spans: list[tuple[float, float]], centres: list[float],
-            texts: list[tuple[str, float, float, str]], label: str, font: str, provenance: dict | None = None) -> dict:
-    """Makes one deliverable of ``master`` at ``output``; ``texts`` are (text, start, end, style) in the language's words."""
+            texts: list[tuple[str, float, float, str]], label: str, font: str, provenance: dict | None = None,
+            titles_ass: str | None = None, fontsdir: str | None = None) -> dict:
+    """Makes one deliverable of ``master`` at ``output``; ``texts`` are (text, start, end, style) in the language's words.
+
+    ``titles_ass`` (orazaka#289): an ASS script written for this deliverable's frame by ``titles.script`` replaces the
+    drawtext layout — film titles, subtitles and the label set by libass, its faces in ``fontsdir``."""
     probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
                             "-of", "csv=p=0", master], capture_output=True, text=True, check=True).stdout.strip().split(",")
     step = plan(kind, (int(probe[0]), int(probe[1])), spans, centres)
@@ -75,7 +90,7 @@ def deliver(master: str, output: str, kind: str, spans: list[tuple[float, float]
     try:
         chain = [step["crop"]] if step["crop"] else []
         chain += [f"scale={width}:{height}:flags=lanczos", "setsar=1"]
-        chain += cut.text_filters(layout, [], font, scratch)
+        chain += text_chain(layout, font, scratch, titles_ass, fontsdir)
         chain.append("format=yuv420p")
         command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", master, "-vf", ",".join(chain),
                    "-map", "0:v", "-map", "0:a?", "-c:v", "libx264", "-preset", "slow", "-crf", "17", "-c:a", "copy",
