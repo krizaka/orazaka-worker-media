@@ -10,12 +10,14 @@ text instead — this module writes an **ASS** script (rendered by libass throug
   halo; a short fade; never under 1 s on screen; a start or an end within a quarter second of a cut lands on the cut.
 * **Safe areas** — everything sits inside the title-safe area (10 % of each side); a vertical (9:16) frame also keeps
   clear of the platforms' own interface: subtitles stand above its bottom quarter, titles below its top tenth.
-* **The label** — « AI-generated » in the language, small and quiet, top right inside the safe area (ADR-080 §5).
+* **The label** — « AI-generated » in the language, small and quiet, top right inside the safe area, only when asked: the
+  players draw the disclosure themselves (orochia#349), and their watermark's top-left corner stays clear of all text.
 
 Everything but :func:`render` is pure. Faces are passed as a fonts folder (``fontsdir``): the worker ships none.
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
@@ -31,6 +33,12 @@ TITLE_SAFE = 0.10
 #: A vertical frame's bottom quarter belongs to the platforms' buttons and captions; its top tenth to their header.
 VERTICAL_BOTTOM_CLEAR = 0.24
 VERTICAL_TOP_CLEAR = 0.10
+
+#: Where subtitles stand, from the bottom of the frame (orazaka#289 review: v1's sat too low): 16 % of a landscape frame,
+#: 26 % of a vertical one (above the platforms' captions and buttons).
+SUBTITLE_BOTTOM = {False: 0.16, True: 0.26}
+#: The player's own corner (Orochia's watermark, orochia#349: top-left): no text ever enters it, nor the label.
+PLAYER_CORNER = (0.0, 0.0, 0.24, 0.16)
 
 MAX_LINE = 42
 MIN_ON_SCREEN = 1.0
@@ -157,7 +165,8 @@ def script(frame: Frame, texts: list[Text], label: str = "") -> str:
         f"{m['left']},{m['right']},0,1",
         # The subtitle halo: a thin dark outline blurred into a soft shadow (\\blur in each event), never a box.
         f"Style: Sub,{TEXT_FACE},{s['subtitle']},&H00F2F2F2,&H00F2F2F2,&H8C000000,&H00000000,0,0,0,0,100,100,"
-        f"{round(s['subtitle'] * 0.01, 2)},0,1,{max(1.5, s['subtitle'] * 0.06):.1f},0,2,{m['left']},{m['right']},{m['bottom']},1",
+        f"{round(s['subtitle'] * 0.01, 2)},0,1,{max(1.5, s['subtitle'] * 0.06):.1f},0,2,{m['left']},{m['right']},"
+        f"{math.ceil(h * SUBTITLE_BOTTOM[frame.vertical])},1",
         f"Style: Label,{LABEL_FACE},{s['label']},&H59FFFFFF,&H59FFFFFF,&HB4000000,&H00000000,0,0,0,0,100,100,"
         f"{round(s['label'] * 0.08, 2)},0,1,1,0,9,{m['left']},{m['right']},{m['top']},1",
     ]
@@ -191,6 +200,36 @@ def script(frame: Frame, texts: list[Text], label: str = "") -> str:
         "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         *styles, "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text", *events, "",
     ])
+
+
+def reserved(frame: Frame) -> tuple[int, int, int, int]:
+    """The player's corner in pixels: (x0, y0, x1, y1)."""
+    x0, y0, x1, y1 = PLAYER_CORNER
+    return (round(x0 * frame.width), round(y0 * frame.height), round(x1 * frame.width), round(y1 * frame.height))
+
+
+def overlaps(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def boxes(frame: Frame, texts: list[Text]) -> list[tuple[int, int, int, int]]:
+    """Where each text lands, approximately (pure): the boxes the layout promises to keep out of the player's corner."""
+    s = sizes(frame)
+    m = frame.safe()
+    out = []
+    cx, cy = frame.width // 2, (m["top"] + (frame.height - m["bottom"])) // 2
+    for t in texts:
+        if t.kind == "main":
+            size = title_size(frame, t.text, s["title"])
+            half = round(size * (len(t.text) * CAPS_ADVANCE + (len(t.text) - 1) * TRACK_END) / 2)
+            gap = round(s["serif"] * 0.55)
+            out.append((cx - half, cy - gap - size, cx + half, cy + round(gap * 0.6) + s["serif"]))
+        elif t.kind == "subtitle":
+            lines = wrap(t.text)
+            half = round(max(len(x) for x in lines) * s["subtitle"] * 0.55 / 2)
+            bottom = frame.height - round(frame.height * SUBTITLE_BOTTOM[frame.vertical])
+            out.append((cx - half, bottom - len(lines) * round(s["subtitle"] * 1.25), cx + half, bottom))
+    return out
 
 
 def _filter_path(path: str) -> str:

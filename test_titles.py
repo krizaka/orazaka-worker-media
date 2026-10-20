@@ -3,6 +3,7 @@ lines at most, timed on the cut, the title pairing faded and tracked; burnt in b
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +17,18 @@ class TestTheScriptIsPure(unittest.TestCase):
         self.assertEqual(titles.Frame(1920, 1080).safe(), {"left": 192, "right": 192, "top": 108, "bottom": 108})
         # A vertical frame keeps clear of the platforms' buttons (bottom quarter) and header (top tenth).
         self.assertEqual(titles.Frame(1080, 1920).safe(), {"left": 108, "right": 108, "top": 192, "bottom": 461})
+
+    def test_subtitles_sit_high_enough_and_nothing_enters_the_players_top_left_corner(self):
+        # orazaka#289 review: v1's subtitles sat too low; the Orochia player's watermark sits top-left (orochia#349).
+        for frame in (titles.Frame(1920, 1080), titles.Frame(1080, 1920)):
+            ass = titles.script(frame, [titles.Text(0, 4, "The World of Krizaka", "main", sub="Dawn"),
+                                        titles.Text(1, 3, "And when the night is longest… no one flies alone.")])
+            sub_margin = int(re.search(r"Style: Sub,(?:[^,]*,){20}(\d+),", ass).group(1))
+            self.assertGreaterEqual(sub_margin / frame.height, titles.SUBTITLE_BOTTOM[frame.vertical])
+            for box in titles.boxes(frame, [titles.Text(0, 4, "The World of Krizaka", "main", sub="Dawn"),
+                                            titles.Text(1, 3, "And when the night is longest… no one flies alone.")]):
+                self.assertFalse(titles.overlaps(box, titles.reserved(frame)), (frame, box))
+        self.assertGreaterEqual(titles.SUBTITLE_BOTTOM[False], 0.15)
 
     def test_two_balanced_lines_at_most_breaking_after_punctuation(self):
         self.assertEqual(titles.wrap("The pigeon delivers, every time."), ["The pigeon delivers, every time."])

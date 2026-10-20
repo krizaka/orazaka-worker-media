@@ -107,8 +107,21 @@ class TestTheGrade(unittest.TestCase):
 
 
 class TestTheLabel(unittest.TestCase):
-    def test_the_label_is_drawn_and_written_in_the_metadata(self):
+    def test_the_label_is_in_the_metadata_and_not_burnt_in_by_default(self):
+        # orazaka#289 / orochia#349: the players draw the AI disclosure themselves (a quiet chip from the file's
+        # provenance); a label burnt into the picture doubled it. It is drawn only when an edit asks (`burnLabel`).
         edit = cut.parse_edit(TWO, 2)
+        self.assertFalse(edit.burn_label)
+        with tempfile.TemporaryDirectory() as scratch:
+            filters = cut.text_filters(edit, cut.timeline(edit), "/font.ttf", scratch)
+            self.assertFalse(os.path.exists(os.path.join(scratch, "label.txt")))
+        self.assertFalse(any("label.txt" in f for f in filters))
+        args = cut.metadata_args(edit)
+        self.assertIn("AI-generated", args[args.index("-metadata") + 1])
+        self.assertTrue(json.loads(args[3].split("=", 1)[1])["aiGenerated"])
+
+    def test_the_label_is_drawn_when_the_edit_asks(self):
+        edit = cut.parse_edit({**TWO, "burnLabel": True}, 2)
         with tempfile.TemporaryDirectory() as scratch:
             filters = cut.text_filters(edit, cut.timeline(edit), "/font.ttf", scratch)
             with open(os.path.join(scratch, "label.txt"), encoding="utf-8") as handle:
