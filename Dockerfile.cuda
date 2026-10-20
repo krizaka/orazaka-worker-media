@@ -10,10 +10,12 @@
 # Weights are never baked in: they live on the host's models volume (/models), fetched once by
 # `python -m app.fetch_models big|small`.
 # ==============================================================================
+# The images below are pinned by digest (OpenSSF Scorecard, Pinned-Dependencies): changing CUDA_VERSION means changing both digests
+# (`docker buildx imagetools inspect nvidia/cuda:<version>-<flavour>-ubuntu24.04`).
 ARG CUDA_VERSION=12.8.1
 
 # --- stable-diffusion.cpp, CUDA ------------------------------------------------------------------
-FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS sdcpp
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04@sha256:520292dbb4f755fd360766059e62956e9379485d9e073bbd2f6e3c20c270ed66 AS sdcpp
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git cmake build-essential ca-certificates \
  && rm -rf /var/lib/apt/lists/*
@@ -29,7 +31,7 @@ RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DSD_CUDA=ON \
  && cp "$(find /build -type f -name sd-server -perm -u+x | head -1)" /sd-server
 
 # --- the worker ----------------------------------------------------------------------------------
-FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04@sha256:ebef3c171eeef0298e4eb2e4be843105edf3b8b0ac45e0b43acee358e8046867
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-venv ffmpeg ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
