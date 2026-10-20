@@ -97,3 +97,11 @@ Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 ---
 
 <sub>A Krizaka product · [krizaka.com](https://www.krizaka.com) · Apache-2.0</sub>
+
+## Hosted-only mode (a cheap CPU consumer)
+
+`MEDIA_WORKER_HOSTED_ONLY=true` runs only the models a provider serves (`pipeline: remote` in `models.yaml`, e.g. the
+hosted Wan 2.2): the process calls the provider's API, so it needs no GPU, no torch and no weights
+(`requirements-hosted.txt`). It registers as `orazaka-worker-media-hosted`, drains `orazaka.jobs.video.hosted`
+(`job.hostedvideo.*`, never matched by the GPU worker's `job.video.*`) and refuses a model that runs on a GPU by name.
+Dev runs it always on inside the core container; the GPU worker stays off until a film needs it.

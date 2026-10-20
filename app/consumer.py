@@ -63,14 +63,58 @@ from app.telemetry import (
 
 JOBS_EXCHANGE = "orazaka.jobs"
 DLX_EXCHANGE = "orazaka.dlx"
-VIDEO_QUEUE = "orazaka.jobs.video"
+
+
+def hosted_only(env: dict | None = None) -> bool:
+    """This process runs only the models a provider serves (``MEDIA_WORKER_HOSTED_ONLY=true``): a cheap CPU consumer.
+
+    It calls the provider's API (app/remote_video.py) and needs no GPU, no torch and no weights, so dev keeps it
+    always on beside the JVMs; the GPU worker (a pod, the Mac) stays off until a film needs it. It drains a queue of
+    its own — hosted jobs are published on ``job.hostedvideo.*``, which the GPU worker's ``job.video.*`` never
+    matches — so a GPU job is never taken by a worker that cannot run it, nor a hosted one left behind a GPU that is off.
+    """
+    return str((os.environ if env is None else env).get("MEDIA_WORKER_HOSTED_ONLY", "")).strip().lower() == "true"
+
+
+HOSTED_BINDINGS = ["job.hostedvideo.*"]
+HOSTED_WORKER_NAME = "orazaka-worker-media-hosted"
+
+
+def video_queue(env: dict | None = None) -> str:
+    return "orazaka.jobs.video.hosted" if hosted_only(env) else "orazaka.jobs.video"
+
+
+def apply_hosted(declaration: dict, env: dict | None = None) -> dict:
+    """The declaration this process registers: the worker.yaml's, or the hosted-only worker's own (name and bindings)."""
+    if not hosted_only(env):
+        return declaration
+    return {**declaration, "name": HOSTED_WORKER_NAME, "family": "media-hosted", "bindings": list(HOSTED_BINDINGS)}
+
+
+def hosted_refusal(model_name: str | None, env: dict | None = None, find=None) -> str | None:
+    """Why this process will not run the model: the hosted-only worker has no GPU, so a model run here is refused by name."""
+    if not hosted_only(env):
+        return None
+    if not model_name:
+        return "this worker runs hosted models only and needs one named: leave « automatic » for the GPU worker"
+    find = find or video_models.find
+    try:
+        remote = getattr(find(model_name), "remote_model", None)
+    except Exception:  # an unknown model: the pipeline refuses it by name, as everywhere
+        return None
+    if remote:
+        return None
+    return f"model '{model_name}' runs on a GPU and this worker runs hosted models only: it needs the GPU worker"
+
+
+VIDEO_QUEUE = video_queue()
 VIDEO_DLQ = VIDEO_QUEUE + ".dlq"
 
 # What this worker drains is declared in worker.yaml and read at boot (ADR-038, S3).
 # It used to be VIDEO_BINDING / COMPOSE_BINDING literals right here, which meant adding a
 # binding was a Python edit; now the declaration is one file, used both to bind the queues
 # and to register with the platform.
-DECLARATION = load_declaration()
+DECLARATION = apply_hosted(load_declaration())
 
 # Studio media composition (ADR-034 §7.2) shares this queue: it is ffmpeg work on this host's
 # accelerator, so it shares the worker's serialised budget rather than competing with generation
@@ -109,7 +153,7 @@ def sound_only(env: dict | None = None) -> bool:
     return str((os.environ if env is None else env).get("MEDIA_WORKER_ONLY_SOUND", "")).strip().lower() == "true"
 
 
-BINDINGS, SOUND_BINDINGS = split_bindings(DECLARATION["bindings"], sound_enabled())
+BINDINGS, SOUND_BINDINGS = split_bindings(DECLARATION["bindings"], sound_enabled() and not hosted_only())
 DECLARATION = {**DECLARATION, "bindings": BINDINGS + SOUND_BINDINGS}
 
 SOUND_PREFIX = "job.sound."
@@ -279,6 +323,9 @@ def _generate_with(job: dict, scratch: str) -> tuple:
     if photo:
         request_body["image_path"] = photo
     model = _requested_model(payload, job)
+    refusal = hosted_refusal(model)
+    if refusal:
+        raise InvalidJobPayload(refusal)
     if model:
         request_body["model"] = model
     else:
@@ -817,7 +864,7 @@ def _consume_once() -> None:
     channel.basic_qos(prefetch_count=1)
     if not sound_only():
         channel.basic_consume(queue=VIDEO_QUEUE, on_message_callback=_dispatch)
-    if sound_enabled():
+    if sound_enabled() and not hosted_only():
         channel.queue_declare(
             queue=SOUND_QUEUE,
             durable=True,
