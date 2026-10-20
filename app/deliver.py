@@ -4,6 +4,7 @@ short-form platforms, each with its own language's captions and label.
 The master is made once, at its best (``cut.py`` with ``master: "2160p"`` and ``text: false``: every shot upscaled to
 4K by SeedVR2, no text drawn). A deliverable is then a cheap pass over it:
 
+- ``2160p``: the master itself with its language's texts (laid out at 4K);
 - ``1080p``: the master scaled down (lanczos);
 - ``9:16``: a 9:16 window of the master's full height that follows each shot's subject — one horizontal centre per shot,
   given by the edit, clamped inside the frame, switching on the shot's first frame — scaled to 1080x1920.
@@ -24,6 +25,7 @@ from app import cut
 
 #: The deliverables this module makes: the aspect their texts are laid out for, and their frame.
 DELIVERABLES = {
+    "2160p": {"aspect": "16:9", "size": (3840, 2160), "master": "2160p"},
     "1080p": {"aspect": "16:9", "size": (1920, 1080)},
     "9:16": {"aspect": "9:16", "size": (1080, 1920)},
 }
@@ -47,7 +49,7 @@ def plan(kind: str, master_size: tuple[int, int], spans: list[tuple[float, float
         raise DeliverError(f"deliverable '{kind}' is not one of {', '.join(DELIVERABLES)}")
     spec = DELIVERABLES[kind]
     if spec["aspect"] == "16:9":
-        return {"crop": None, "size": spec["size"], "aspect": spec["aspect"]}
+        return {"crop": None, "size": spec["size"], "aspect": spec["aspect"], "master": spec.get("master", "1080p")}
     if len(centres) != len(spans):
         raise DeliverError("a vertical cut needs one centre per shot")
     width, height = master_size
@@ -56,7 +58,7 @@ def plan(kind: str, master_size: tuple[int, int], spans: list[tuple[float, float
     expression = str(xs[-1])
     for (start, _end), x in reversed(list(zip(spans[1:], xs[:-1], strict=True))):
         expression = f"if(lt(t\\,{start:.3f})\\,{x}\\,{expression})"
-    return {"crop": f"crop={window}:{height}:{expression}:0", "size": spec["size"], "aspect": spec["aspect"]}
+    return {"crop": f"crop={window}:{height}:{expression}:0", "size": spec["size"], "aspect": spec["aspect"], "master": "1080p"}
 
 
 def deliver(master: str, output: str, kind: str, spans: list[tuple[float, float]], centres: list[float],
@@ -67,7 +69,7 @@ def deliver(master: str, output: str, kind: str, spans: list[tuple[float, float]
     step = plan(kind, (int(probe[0]), int(probe[1])), spans, centres)
     width, height = step["size"]
     # The texts reuse the cut's own layout at the deliverable's frame: an Edit of that aspect, its titles the texts.
-    layout = cut.Edit(aspect=step["aspect"], fps=24, grade="none", shots=(),
+    layout = cut.Edit(aspect=step["aspect"], fps=24, grade="none", shots=(), master=step["master"],
                       titles=tuple(cut.Title(text=t, start=a, end=b, style=s) for t, a, b, s in texts), label=label)
     scratch = tempfile.mkdtemp(prefix="orz-deliver-")
     try:

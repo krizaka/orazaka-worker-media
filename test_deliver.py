@@ -68,6 +68,12 @@ class TestTheDeliverables(unittest.TestCase):
         self.assertIn(":0", graph.replace("crop=1215:2160:", ""))  # 0.05 clamps to the left edge
         self.assertIn("2625", graph)  # 0.95 clamps to the right edge (3840 - 1215)
 
+    def test_the_4k_cut_keeps_the_master_frame_and_lays_its_texts_out_at_4k(self):
+        step = deliver.plan("2160p", (3840, 2160), [(0, 2)], [0.5])
+        self.assertEqual((step["crop"], step["size"], step["master"]), (None, (3840, 2160), "2160p"))
+        layout = cut.Edit(aspect="16:9", fps=24, grade="none", shots=(), master=step["master"])
+        self.assertEqual(layout.size, (3840, 2160))
+
     def test_the_1080p_cut_is_a_scale_without_crop(self):
         step = deliver.plan("1080p", (3840, 2160), [(0, 2)], [0.5])
         self.assertIsNone(step["crop"])

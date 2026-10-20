@@ -87,6 +87,29 @@ class TestUpscale(unittest.TestCase):
         self.assertEqual("3840x2160", facts["upscaleTo"])
 
 
+class TestBatch(unittest.TestCase):
+    """SeedVR2 runs faster and holds the time better in larger batches (4n+1 frames); 5 stays the default (a 48 GB card)."""
+
+    def test_the_batch_is_5_unless_the_host_says_more(self):
+        self.assertEqual(5, upscale.batch_size(ENV))
+        self.assertEqual(21, upscale.batch_size({**ENV, "SEEDVR2_BATCH_SIZE": "21"}))
+
+    def test_a_batch_that_is_not_4n_plus_1_or_too_big_is_refused_by_name(self):
+        for bad in ("4", "0", "abc", "200"):
+            with self.assertRaisesRegex(upscale.InvalidUpscale, "SEEDVR2_BATCH_SIZE"):
+                upscale.batch_size({**ENV, "SEEDVR2_BATCH_SIZE": bad})
+
+    def test_the_command_carries_the_hosts_batch(self):
+        runner = Runner(tempfile.gettempdir())
+        folder = tempfile.mkdtemp()
+        clip = os.path.join(folder, "clip.mp4")
+        with open(clip, "wb") as handle:
+            handle.write(b"original")
+        upscale.upscale(clip, "2160p", [folder], run=runner, env={**ENV, "SEEDVR2_BATCH_SIZE": "45"})
+        seedvr = runner.calls[1]
+        self.assertEqual("45", seedvr[seedvr.index("--batch_size") + 1])
+
+
 class TestShapes(unittest.TestCase):
     """The frame the clip leaves in follows the clip's own orientation and never asks for pixels the upscale did not make."""
 
