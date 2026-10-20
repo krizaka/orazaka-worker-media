@@ -87,6 +87,22 @@ class TestUpscale(unittest.TestCase):
         self.assertEqual("3840x2160", facts["upscaleTo"])
 
 
+class TestScratchBesideTheClip(unittest.TestCase):
+    def test_the_upscaled_file_is_made_beside_the_clip_so_the_final_move_never_crosses_filesystems(self):
+        # A pod keeps its outputs on a network volume and /tmp on the container disk: os.replace across them is EXDEV.
+        folder = tempfile.mkdtemp()
+        clip = os.path.join(folder, "clip.mp4")
+        with open(clip, "wb") as handle:
+            handle.write(b"original")
+        runner = Runner(folder)
+        upscale.upscale(clip, "1080p", [folder], run=runner, env=ENV)
+        seedvr, ffmpeg = runner.calls[1], runner.calls[2]
+        for made in (seedvr[seedvr.index("--output") + 1], ffmpeg[-1]):
+            self.assertTrue(os.path.realpath(made).startswith(os.path.realpath(folder) + os.sep), made)
+        self.assertEqual(b"upscaled", open(clip, "rb").read())
+        self.assertEqual(["clip.mp4"], os.listdir(folder))  # the scratch is gone
+
+
 class TestBatch(unittest.TestCase):
     """SeedVR2 runs faster and holds the time better in larger batches (4n+1 frames); 5 stays the default (a 48 GB card)."""
 

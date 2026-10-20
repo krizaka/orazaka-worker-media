@@ -74,7 +74,8 @@ def upscale(source: str, target_key: str, roots, run=subprocess.run, env=os.envi
     if before[1] > before[0]:  # a vertical clip leaves in a vertical frame
         width, height = height, width
     started = clock()
-    with tempfile.TemporaryDirectory(prefix="orazaka-upscale-") as scratch:
+    # The scratch sits beside the clip: the final move is a rename on one filesystem (never EXDEV from /tmp to a volume).
+    with tempfile.TemporaryDirectory(prefix=".orazaka-upscale-", dir=os.path.dirname(resolved)) as scratch:
         raw = os.path.join(scratch, "seedvr2.mp4")
         run(
             [python, os.path.join(home, "inference_cli.py"), resolved, "--output", raw, "--resolution", str(min(width, height)), "--dit_model", DIT,
