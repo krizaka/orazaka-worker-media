@@ -46,6 +46,8 @@ RATES = {"slow": 11.0, "measured": 13.0, "rhythmic": 14.0, "lively": 15.0}
 PITCH_STD = 60.0
 EMPHASIS_RATE = 0.9
 EMPHASIS_PITCH = 1.3
+#: A phrase this short (in words) is joined to the next.
+MIN_PHRASE_WORDS = 2
 #: The breath each break asks for, in seconds.
 BREAKS = {"…": 0.55, "...": 0.55, ",": 0.18, ":": 0.3, ";": 0.3, "—": 0.3}
 
@@ -79,7 +81,15 @@ def phrases(text: str) -> list[tuple[str, float]]:
                 out[-1] = (out[-1][0] + ("," if part == "," else ""), BREAKS[part])
         elif part.strip():
             out.append((part.strip(), 0.0))
-    return out
+    # A phrase of one or two words is said with the next one, its comma kept: Zonos drops such a short utterance
+    # (« In Québec, … » lost its first words in every take, orazaka#289).
+    merged: list[tuple[str, float]] = []
+    for phrase, pause in out:
+        if merged and len(merged[-1][0].split()) <= MIN_PHRASE_WORDS and merged[-1][1] < BREAKS["…"]:
+            merged[-1] = (f"{merged[-1][0]} {phrase}", pause)
+        else:
+            merged.append((phrase, pause))
+    return merged
 
 
 def plan(text: str, direction: dict) -> list[Phrase]:

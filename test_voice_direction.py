@@ -22,6 +22,14 @@ class TestDirection(unittest.TestCase):
         self.assertEqual(vd.phrases("The falcon keeps watch: security comes first."),
                          [("The falcon keeps watch", 0.3), ("security comes first.", 0.0)])
 
+    def test_a_phrase_of_one_or_two_words_is_said_with_the_next(self):
+        # orazaka#289: « In Québec, they help you… » lost « In Québec » in every take — Zonos drops a two-word utterance.
+        self.assertEqual(vd.phrases("In Québec, they help you… then they argue about how."),
+                         [("In Québec, they help you", 0.55), ("then they argue about how.", 0.0)])
+        self.assertEqual(vd.phrases("Au Québec, on t’aide… pis on s’obstine sur comment."),
+                         [("Au Québec, on t’aide", 0.55), ("pis on s’obstine sur comment.", 0.0)])
+        self.assertEqual(vd.phrases("Hush."), [("Hush.", 0.0)])
+
     def test_pace_and_emphasis(self):
         plan = vd.plan("And when the night is longest… no one flies alone.",
                        {"emotion": "tender, rising hope", "pace": "slow", "emphasis": ["alone"], "pauseAfter": 0.6})
