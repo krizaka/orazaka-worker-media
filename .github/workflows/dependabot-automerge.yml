@@ -1,0 +1,14 @@
+# Dependabot auto-merge: patch and minor (grouped included) merge when the required checks pass; majors stay manual.
+# Logic lives in krizaka/.github; this file only hands over the event. Does not check out or run the PR's code.
+name: Dependabot auto-merge
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    uses: krizaka/.github/.github/workflows/dependabot-automerge.yml@main
