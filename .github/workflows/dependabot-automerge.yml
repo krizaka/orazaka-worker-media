@@ -1,14 +1,18 @@
 # Dependabot auto-merge: patch and minor (grouped included) merge when the required checks pass; majors stay manual.
-# Logic lives in krizaka/.github; this file only hands over the event. Does not check out or run the PR's code.
+# Logic lives in krizaka/.github (reusable, pinned by SHA; `node scripts/pin-supply-chain.mjs --refresh` there moves it);
+# this file only hands over the event and never checks out or runs the PR's code.
+# Token-Permissions (OpenSSF Scorecard): read-only at the top, the write scopes on the job that needs them.
 name: Dependabot auto-merge
 
 on: pull_request_target
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   automerge:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
-    uses: krizaka/.github/.github/workflows/dependabot-automerge.yml@main
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: krizaka/.github/.github/workflows/dependabot-automerge.yml@44d5aa3d2df85f3c65059eaf24928d3534014b33 # main
