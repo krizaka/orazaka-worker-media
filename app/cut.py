@@ -28,6 +28,9 @@ from dataclasses import dataclass, field
 #: The output frame size per aspect: 1080p, the size every short-form platform and a 16:9 player expect.
 OUTPUT_SIZES = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}
 
+#: The master's resolution: 1080p (the default), or 2160p — a 4K master the deliverables are cut from (app/deliver.py).
+MASTERS = {"1080p": 1, "2160p": 2}
+
 #: Technical ceilings of one cut on one accelerator (the worker's budget, like composer.MAX_PHOTOS), not business rules.
 MAX_SHOTS = 24
 MAX_SECONDS = 120.0
@@ -136,10 +139,17 @@ class Edit:
     ambience: str = "none"
     #: Whooshes on transitions and impacts on ramps and flashes, synthesized.
     sfx: bool = False
+    #: ``1080p`` or ``2160p`` (4K: the source clips are upscaled to 2160 by SeedVR2, tiled).
+    master: str = "1080p"
+    #: Titles, captions and the drawn label. ``False``: a clean master, its text drawn per language by app/deliver.py
+    #: (the file's metadata still says AI-generated).
+    text: bool = True
 
     @property
     def size(self) -> tuple[int, int]:
-        return OUTPUT_SIZES[self.aspect]
+        width, height = OUTPUT_SIZES[self.aspect]
+        factor = MASTERS[self.master]
+        return width * factor, height * factor
 
 
 def _number(value, name: str, low: float, high: float) -> float:
@@ -228,10 +238,13 @@ def parse_edit(raw, clip_count: int) -> Edit:
     ambience = str(raw.get("ambience") or "none")
     if ambience not in AMBIENCES:
         raise EditError(f"ambience must be one of {', '.join(AMBIENCES)}")
+    master = str(raw.get("master") or "1080p")
+    if master not in MASTERS:
+        raise EditError(f"master must be one of {', '.join(MASTERS)}")
     edit = Edit(aspect=aspect, fps=fps, grade=grade, shots=tuple(shots), titles=tuple(titles),
                 label=_text(raw.get("label") or DEFAULT_LABEL, "label") or DEFAULT_LABEL,
                 interpolate=bool(raw.get("interpolate", True)), upscale=upscale, ambience=ambience,
-                sfx=bool(raw.get("sfx", False)))
+                sfx=bool(raw.get("sfx", False)), master=master, text=raw.get("text") is not False)
     if timeline(edit)[-1][1] > MAX_SECONDS:
         raise EditError(f"the cut is longer than {MAX_SECONDS:g} s")
     return edit
@@ -357,6 +370,12 @@ def text_filters(edit: Edit, spans: list[tuple[float, float]], font: str, scratc
     return filters
 
 
+def overlay_filters(edit: Edit, spans: list[tuple[float, float]], font: str, scratch: str) -> list[str]:
+    """What is drawn over the joined shots: the texts and the label, or nothing for a clean master (pure but for the
+    text files ``text_filters`` writes)."""
+    return text_filters(edit, spans, font, scratch) if edit.text else ["null"]
+
+
 def _clamp(value: float) -> float:
     return 0.0 if value < 0 else 1.0 if value > 1 else value
 
@@ -458,14 +477,15 @@ def foley_graph(edit: Edit, spans: list[tuple[float, float]], seconds: float) ->
 
 
 def upscale_command(edit: Edit, source: str, output: str, env: dict) -> list[str]:
-    """The SeedVR2 command for one source clip: its short side to 1080 (9:16 → 1080x1920, 16:9 → 1920x1080) (pure)."""
+    """The SeedVR2 command for one source clip: its short side to the master's (1080, or 2160 with a tiled VAE) (pure)."""
     home, python = env.get("SEEDVR2_HOME"), env.get("SEEDVR2_PYTHON")
     if not home or not python:
         raise EditError("this worker has no video upscaler installed (SEEDVR2_HOME / SEEDVR2_PYTHON)")
     models = os.path.join(env.get("MEDIA_MODELS_DIR", "/models"), "seedvr2")
     return [python, os.path.join(home, "inference_cli.py"), source, "--output", output, "--resolution",
             str(min(edit.size)), "--dit_model", SEEDVR2_DIT, "--model_dir", models, "--batch_size", "5",
-            "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4"]
+            "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4",
+            *(["--vae_encode_tiled", "--vae_decode_tiled"] if min(edit.size) > 1080 else [])]
 
 
 def segment_workers(shots: int, cpus: int | None = None) -> int:
@@ -537,7 +557,7 @@ def cut(clips: list[str], edit: Edit, output_path: str, provenance: dict | None 
             list(pool.map(make, range(len(edit.shots))))
         durations = [_probe_seconds(segment) for segment in segments]
         spans = timeline(edit)
-        graph = join_filter(edit, durations) + ";[joined]" + ",".join(text_filters(edit, spans, font, staging)) + "[out]"
+        graph = join_filter(edit, durations) + ";[joined]" + ",".join(overlay_filters(edit, spans, font, staging)) + "[out]"
         length = spans[-1][1]
         fx = foley_graph(edit, spans, length)
         audio = ["-map", "[fx]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] if fx else []
@@ -555,7 +575,7 @@ def cut(clips: list[str], edit: Edit, output_path: str, provenance: dict | None 
     width, height = edit.size
     return {"durationSeconds": round(_probe_seconds(output_path), 3), "width": width, "height": height,
             "shots": len(edit.shots), "grade": edit.grade, "fps": edit.fps, "upscale": edit.upscale,
-            "ambience": edit.ambience, "sfx": len(sfx_events(edit, timeline(edit)))}
+            "ambience": edit.ambience, "sfx": len(sfx_events(edit, timeline(edit))), "master": edit.master}
 
 
 def _run_in(command: list[str], cwd: str) -> None:

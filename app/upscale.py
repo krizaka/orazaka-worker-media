@@ -43,6 +43,15 @@ def _config(env) -> tuple[str, str, str]:
     return home, python, os.path.join(env.get("MEDIA_MODELS_DIR", "/models"), "seedvr2")
 
 
+def batch_size(env) -> int:
+    """Frames SeedVR2 takes at once (``SEEDVR2_BATCH_SIZE``, 4n+1, default 5): a bigger batch is faster and steadier in
+    time, and needs a bigger card (an H200 takes 45 at 2160p beside a resident Wan A14B)."""
+    raw = str(env.get("SEEDVR2_BATCH_SIZE") or "5")
+    if not raw.isdigit() or int(raw) < 1 or int(raw) > 121 or (int(raw) - 1) % 4:
+        raise InvalidUpscale(f"SEEDVR2_BATCH_SIZE must be 4n+1 between 1 and 121, not '{raw}'")
+    return int(raw)
+
+
 def _size(path: str, run) -> tuple[int, int]:
     out = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", path], capture_output=True, text=True, check=True).stdout
     width, height = out.strip().split(",")[:2]
@@ -65,11 +74,12 @@ def upscale(source: str, target_key: str, roots, run=subprocess.run, env=os.envi
     if before[1] > before[0]:  # a vertical clip leaves in a vertical frame
         width, height = height, width
     started = clock()
-    with tempfile.TemporaryDirectory(prefix="orazaka-upscale-") as scratch:
+    # The scratch sits beside the clip: the final move is a rename on one filesystem (never EXDEV from /tmp to a volume).
+    with tempfile.TemporaryDirectory(prefix=".orazaka-upscale-", dir=os.path.dirname(resolved)) as scratch:
         raw = os.path.join(scratch, "seedvr2.mp4")
         run(
             [python, os.path.join(home, "inference_cli.py"), resolved, "--output", raw, "--resolution", str(min(width, height)), "--dit_model", DIT,
-             "--model_dir", models, "--batch_size", "5", "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4",
+             "--model_dir", models, "--batch_size", str(batch_size(env)), "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4",
              *(["--vae_encode_tiled", "--vae_decode_tiled"] if min(width, height) > 1080 else [])],
             check=True, cwd=home,
         )
