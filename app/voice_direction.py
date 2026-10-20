@@ -94,6 +94,7 @@ def phrases(text: str) -> list[tuple[str, float]]:
 
 def plan(text: str, direction: dict) -> list[Phrase]:
     """A line and its direction as the phrases a speech model says (pure)."""
+    text = text.replace("’", "'")  # the phonemizer reads a typographic apostrophe as a break (« on t’aide » → « on tête »)
     emotion = emotion_vector(direction.get("emotion", ""))
     rate = RATES.get(direction.get("pace", "measured"), RATES["measured"])
     emphasis = [e.lower() for e in direction.get("emphasis", [])]
