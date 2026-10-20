@@ -30,6 +30,10 @@ class TestDirection(unittest.TestCase):
                          [("Au Québec, on t’aide", 0.55), ("pis on s’obstine sur comment.", 0.0)])
         self.assertEqual(vd.phrases("Hush."), [("Hush.", 0.0)])
 
+    def test_the_typographic_apostrophe_is_said_like_a_plain_one(self):
+        # orazaka#289: « on t’aide » was said « on tête » — the phonemizer reads ’ as a break; the subtitles keep it.
+        self.assertEqual(vd.plan("Au Québec, on t’aide.", {})[0].text, "Au Québec, on t'aide.")
+
     def test_pace_and_emphasis(self):
         plan = vd.plan("And when the night is longest… no one flies alone.",
                        {"emotion": "tender, rising hope", "pace": "slow", "emphasis": ["alone"], "pauseAfter": 0.6})
