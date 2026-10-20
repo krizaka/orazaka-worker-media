@@ -103,3 +103,12 @@ class TestTheDeliverablesAreMade(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFilmTitlesReplaceDrawtext(unittest.TestCase):
+    """orazaka#289: a deliverable can take the film's ASS titles (libass) instead of the drawtext layout."""
+
+    def test_an_ass_script_is_burnt_with_its_fonts_folder(self):
+        layout = cut.Edit(aspect="16:9", fps=24, grade="none", shots=(), titles=(), label="AI-generated")
+        chain = deliver.text_chain(layout, "font.ttf", "/tmp", titles_ass="/w/titles: en.ass", fontsdir="/w/fonts")
+        self.assertEqual(chain, ["ass=filename='/w/titles\\: en.ass':fontsdir='/w/fonts'"])
