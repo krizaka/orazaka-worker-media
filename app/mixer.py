@@ -58,6 +58,9 @@ class Cue:
     start: float
     end: float
     intensity: float
+    #: How this cue enters over the one before it: a long crossfade inside a mood, a short one on a hard genre switch
+    #: cut on the picture (a journey that changes city and music at once, orazaka#289).
+    fade: float = 1.5
 
 
 @dataclass(frozen=True)
@@ -80,10 +83,11 @@ def music_graph(cues: list[Cue], seconds: float, first_input: int) -> tuple[str,
     ordered = sorted(cues, key=lambda c: c.start)
     parts, files = [], []
     for k, c in enumerate(ordered):
-        length = c.end - c.start + (CUE_CROSSFADE_S if k < len(ordered) - 1 else 0)
-        fade_in = 2.0 if k == 0 else CUE_CROSSFADE_S
-        fade_out = CUE_CROSSFADE_S if k < len(ordered) - 1 else min(3.0, length / 2)
-        delay = int(max(0.0, c.start - (0 if k == 0 else CUE_CROSSFADE_S / 2)) * 1000)
+        following = ordered[k + 1].fade if k < len(ordered) - 1 else 0.0
+        length = c.end - c.start + following / 2 + (c.fade / 2 if k else 0)
+        fade_in = 2.0 if k == 0 else c.fade
+        fade_out = following if k < len(ordered) - 1 else min(3.0, length / 2)
+        delay = int(max(0.0, c.start - (0 if k == 0 else c.fade / 2)) * 1000)
         parts.append(
             f"[{first_input + k}:a]aformat=sample_fmts=fltp:sample_rates={RATE}:channel_layouts=stereo,atrim=0:{length:.3f},"
             f"asetpts=PTS-STARTPTS,volume={cue_gain(c.intensity)}dB,afade=t=in:st=0:d={fade_in:.2f},"

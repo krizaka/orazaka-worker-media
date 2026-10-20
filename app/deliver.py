@@ -74,18 +74,20 @@ def text_chain(layout: "cut.Edit", font: str, scratch: str, titles_ass: str | No
 
 def deliver(master: str, output: str, kind: str, spans: list[tuple[float, float]], centres: list[float],
             texts: list[tuple[str, float, float, str]], label: str, font: str, provenance: dict | None = None,
-            titles_ass: str | None = None, fontsdir: str | None = None) -> dict:
+            titles_ass: str | None = None, fontsdir: str | None = None, burn_label: bool = False) -> dict:
     """Makes one deliverable of ``master`` at ``output``; ``texts`` are (text, start, end, style) in the language's words.
 
     ``titles_ass`` (orazaka#289): an ASS script written for this deliverable's frame by ``titles.script`` replaces the
-    drawtext layout — film titles, subtitles and the label set by libass, its faces in ``fontsdir``."""
+    drawtext layout — film titles, subtitles and the label set by libass, its faces in ``fontsdir``. The label is burnt
+    only with ``burn_label`` (the players draw the disclosure; the metadata always carries it)."""
     probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
                             "-of", "csv=p=0", master], capture_output=True, text=True, check=True).stdout.strip().split(",")
     step = plan(kind, (int(probe[0]), int(probe[1])), spans, centres)
     width, height = step["size"]
     # The texts reuse the cut's own layout at the deliverable's frame: an Edit of that aspect, its titles the texts.
     layout = cut.Edit(aspect=step["aspect"], fps=24, grade="none", shots=(), master=step["master"],
-                      titles=tuple(cut.Title(text=t, start=a, end=b, style=s) for t, a, b, s in texts), label=label)
+                      titles=tuple(cut.Title(text=t, start=a, end=b, style=s) for t, a, b, s in texts), label=label,
+                      burn_label=burn_label)
     scratch = tempfile.mkdtemp(prefix="orz-deliver-")
     try:
         chain = [step["crop"]] if step["crop"] else []

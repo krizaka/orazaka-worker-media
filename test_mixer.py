@@ -23,8 +23,14 @@ class TestTheDecisionsArePure(unittest.TestCase):
         self.assertEqual(files, ["a.wav", "b.wav"])
         self.assertIn(f"volume={mixer.cue_gain(0.3)}dB", graph)
         self.assertIn("adelay=9250|9250", graph)  # the second cue starts half a crossfade early
-        self.assertIn("afade=t=out:st=7.000:d=3.00", graph)  # the last cue resolves over 3 s
+        self.assertIn("afade=t=out:st=7.750:d=3.00", graph)  # the last cue resolves over its last 3 s, ending on the film's end
         self.assertTrue(graph.endswith("[music]"))
+
+    def test_a_hard_genre_switch_crossfades_short_on_the_cut(self):
+        graph, _ = mixer.music_graph([mixer.Cue("soft.wav", 0, 6, 0.3), mixer.Cue("hiphop.wav", 6, 12, 0.6, fade=0.3)], 12.0, 0)
+        self.assertIn("adelay=5850|5850", graph)  # the hip-hop cue starts 0.15 s before the cut
+        self.assertIn("afade=t=in:st=0:d=0.30", graph)
+        self.assertIn("afade=t=out:st=5.850:d=0.30", graph)  # the soft cue leaves as fast
 
     def test_the_voice_keys_the_duck_and_gets_room(self):
         graph, files = mixer.mix_graph([mixer.Cue("m.wav", 0, 8, 0.5)], [mixer.Line("v0.wav", 1.2), mixer.Line("v1.wav", 4)], "fx.wav", 8)

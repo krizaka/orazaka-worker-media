@@ -141,6 +141,9 @@ class Edit:
     sfx: bool = False
     #: ``1080p`` or ``2160p`` (4K: the source clips are upscaled to 2160 by SeedVR2, tiled).
     master: str = "1080p"
+    #: Burn the AI label into the picture (orazaka#289): off by default — the players draw the disclosure from the file's
+    #: provenance (Orochia's chip, orochia#349) and the metadata always says AI-generated; on for a platform that does not.
+    burn_label: bool = False
     #: Titles, captions and the drawn label. ``False``: a clean master, its text drawn per language by app/deliver.py
     #: (the file's metadata still says AI-generated).
     text: bool = True
@@ -244,7 +247,8 @@ def parse_edit(raw, clip_count: int) -> Edit:
     edit = Edit(aspect=aspect, fps=fps, grade=grade, shots=tuple(shots), titles=tuple(titles),
                 label=_text(raw.get("label") or DEFAULT_LABEL, "label") or DEFAULT_LABEL,
                 interpolate=bool(raw.get("interpolate", True)), upscale=upscale, ambience=ambience,
-                sfx=bool(raw.get("sfx", False)), master=master, text=raw.get("text") is not False)
+                sfx=bool(raw.get("sfx", False)), master=master, text=raw.get("text") is not False,
+                burn_label=raw.get("burnLabel") is True)
     if timeline(edit)[-1][1] > MAX_SECONDS:
         raise EditError(f"the cut is longer than {MAX_SECONDS:g} s")
     return edit
@@ -359,6 +363,8 @@ def text_filters(edit: Edit, spans: list[tuple[float, float]], font: str, scratc
                 f":x=(w-text_w)/2:y={top + k * int(size * 1.25)}{look}"
                 f":enable='between(t,{start:.3f},{end:.3f})'"
             )
+    if not edit.burn_label:
+        return filters
     label_path = os.path.join(scratch, "label.txt")
     with open(label_path, "w", encoding="utf-8") as handle:
         handle.write(edit.label)
