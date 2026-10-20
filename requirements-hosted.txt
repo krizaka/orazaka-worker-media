@@ -1,0 +1,7 @@
+# The hosted-only worker (MEDIA_WORKER_HOSTED_ONLY=true): a CPU consumer that calls a provider's API.
+# No torch, no weights, no GPU: this is all it imports. The GPU worker uses requirements-cuda.txt.
+pika
+PyYAML
+cryptography
+Pillow
+psutil
