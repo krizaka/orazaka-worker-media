@@ -20,9 +20,11 @@ import numpy as np
 
 RATE = 48000
 
-BEDS = ("rain", "storm", "wind", "wind-soft", "lake", "waves", "drizzle", "room", "dawn", "city", "rain-window", "drips")
+BEDS = ("rain", "storm", "wind", "wind-soft", "lake", "waves", "drizzle", "room", "dawn", "city", "rain-window", "drips",
+        "tunnel", "crowd", "neon")
 EVENTS = ("thunder", "gust", "flap", "whoosh", "steps", "rustle", "shake", "paper", "block", "hum", "ignite", "chime", "call",
-          "chirp", "splash", "splash-small", "coin", "parcel", "tap", "swell")
+          "chirp", "splash", "splash-small", "coin", "parcel", "tap", "swell",
+          "train", "skate", "sparks", "impact", "slide", "riser")
 KINDS = BEDS + EVENTS
 
 #: Beds fade in and out over this many seconds at their shot's edges (a cut is not a click).
@@ -126,6 +128,17 @@ def bed(kind: str, seconds: float, seed: int) -> np.ndarray:
         return shaped(rng, n, 30, 700, -3) * _lfo(n, 0.05, 0.3, rng) * 0.7
     if kind == "drips":
         return _drops(rng, n, 2.5, 700, 1600, 0.03)
+    if kind == "tunnel":  # a metro tunnel: a deep air rumble, a far hum, water dripping in a big space
+        rumble = shaped(rng, n, 20, 180, -3) * _lfo(n, 0.07, 0.5, rng)
+        return rumble * 0.8 + _drops(rng, n, 1.5, 500, 1200, 0.06) * 0.4 + shaped(rng, n, 50, 70) * 0.15
+    if kind == "crowd":  # a crowd heard through a wall: many murmurs, band-limited, breathing
+        murmur = shaped(rng, n, 180, 1400, -2) * _lfo(n, 1.7, 0.35, rng) * _lfo(n, 0.3, 0.4, rng)
+        return murmur * 0.6 + shaped(rng, n, 40, 120) * _lfo(n, 2.1, 0.8, rng) * 0.3
+    if kind == "neon":  # an electric tube: a 120 Hz buzz with its harmonics and a crackle now and then
+        t = np.arange(n) / RATE
+        buzz = sum(np.sin(2 * np.pi * 120 * h * t) / h for h in (1, 2, 3, 4, 6)).astype(np.float32)
+        flick = (rng.random(n) < 0.0004).astype(np.float32)
+        return buzz * 0.3 * _lfo(n, 0.5, 0.2, rng) + np.convolve(flick, np.hanning(200), "same").astype(np.float32) * 0.5
     raise FoleyError(f"{kind!r} is not a bed")
 
 
@@ -205,6 +218,49 @@ def event(kind: str, seed: int) -> np.ndarray:
         burst = shaped(rng, n, 300, 8000, -1) * _env(n, 0.005, 0.12 if kind == "splash" else 0.06)
         bubbles = _drops(rng, n, 40 if kind == "splash" else 15, 600, 2400, 0.012) * _env(n, 0.05, 0.3) * 0.5
         return burst + bubbles
+    if kind == "train":  # a train passing: a rumble that swells and falls, wheel clacks, a squeal at its peak
+        n = secs(3.0)
+        t = np.arange(n) / RATE
+        swell = np.exp(-((t - 1.4) / 0.7) ** 2).astype(np.float32)
+        body = shaped(rng, n, 30, 900, -2) * swell
+        clacks = np.zeros(n, np.float32)
+        for at in np.arange(0.4, 2.6, 0.19):
+            m = secs(0.04)
+            clacks[secs(at):secs(at) + m] += shaped(rng, m, 200, 2500) * _env(m, 0.001, 0.01)
+        squeal = np.sin(2 * np.pi * (2400 - 300 * t) * t).astype(np.float32) * swell ** 3 * 0.12
+        return body + clacks * swell + squeal
+    if kind == "skate":  # wheels rolling on concrete, then the board's clack
+        n = secs(0.9)
+        roll = shaped(rng, n, 60, 900, -1) * _env(n, 0.05, 0.4)
+        m = secs(0.12)
+        clack = np.zeros(n, np.float32)
+        clack[secs(0.7):secs(0.7) + m] = (shaped(rng, m, 300, 4000) * _env(m, 0.001, 0.02))[: n - secs(0.7)]
+        return roll * 0.7 + clack * 1.4
+    if kind == "sparks":  # a spray of sparks: bright crackles that thin out
+        n = secs(0.8)
+        crackle = (rng.random(n) < 0.03 * np.exp(-np.arange(n) / secs(0.3))).astype(np.float32) * rng.uniform(-1, 1, n).astype(np.float32)
+        hiss = shaped(rng, n, 3000, 14000, 1) * _env(n, 0.002, 0.15) * 0.4
+        sharp = np.convolve(crackle, np.array([1.0, -0.9], np.float32), "same")  # a differentiator keeps the crackle bright
+        return sharp + hiss
+    if kind == "impact":  # a heavy hit: a sub thump falling in pitch and a short crack
+        n = secs(1.3)
+        t = np.arange(n) / RATE
+        f = 70 * np.exp(-t * 2.5) + 28
+        sub = np.sin(2 * np.pi * np.cumsum(f) / RATE) * np.exp(-t * 3.2)
+        crack = shaped(rng, n, 400, 5000) * _env(n, 0.001, 0.03) * 0.3
+        return (sub + crack).astype(np.float32)
+    if kind == "slide":  # a body sliding through water: a long wet hiss and a few splashes
+        n = secs(1.0)
+        hiss = shaped(rng, n, 500, 7000, -1) * np.sin(np.pi * np.arange(n) / n).astype(np.float32) ** 0.6
+        return hiss * 0.8 + _drops(rng, n, 20, 600, 2200, 0.01) * 0.4
+    if kind == "riser":  # noise rising in pitch and level into a cut
+        n = secs(1.6)
+        t = np.arange(n) / n
+        out = np.zeros(n, np.float32)
+        for k, lo in enumerate((300, 900, 2500)):
+            band = shaped(rng, n, lo, lo * 4, 0)
+            out += band * (t ** (3 - k)).astype(np.float32)
+        return out
     raise FoleyError(f"{kind!r} is not an event")
 
 
