@@ -22,6 +22,21 @@ class TestEverySoundIsMade(unittest.TestCase):
             self.assertGreater(np.abs(e).max(), 0.01, kind)
             self.assertLess(len(e), foley.RATE * 4, kind)
 
+    def test_the_city_at_night_is_heard(self):
+        """v3 (ADR-080 v3): the underground films need their sounds — a tunnel, a crowd, a neon buzz; a train, a
+        skateboard, sparks, an impact, a wet slide, a riser."""
+        for kind in ("tunnel", "crowd", "neon"):
+            self.assertIn(kind, foley.BEDS)
+        for kind in ("train", "skate", "sparks", "impact", "slide", "riser"):
+            self.assertIn(kind, foley.EVENTS)
+        # An impact is low (its energy under 200 Hz), sparks are bright (over 2 kHz).
+        def low_share(x):
+            spec = np.abs(np.fft.rfft(x))
+            freqs = np.fft.rfftfreq(len(x), 1 / foley.RATE)
+            return spec[freqs < 200].sum() / spec.sum()
+        self.assertGreater(low_share(foley.event("impact", 1)), 0.4)
+        self.assertLess(low_share(foley.event("sparks", 1)), 0.05)
+
     def test_an_unknown_sound_is_refused_by_name(self):
         with self.assertRaisesRegex(foley.FoleyError, "explosion"):
             foley.render([{"kind": "explosion", "start": 0, "end": 1}], 1)
