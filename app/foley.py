@@ -239,7 +239,7 @@ def render(cues: list[dict], seconds: float, seed: int = 0) -> np.ndarray:
             pan = cue.get("pan", 0.0)
             width = 0.35  # a bed is wide: the two sides decorrelated by a few milliseconds
             delay = int(0.011 * RATE)
-            left, right = sig, np.concatenate([np.zeros(delay, np.float32), sig[:-delay] if delay < len(sig) else sig])
+            left, right = sig, np.concatenate([np.zeros(delay, np.float32), sig])[: len(sig)]  # same length, even a sliver
             sides = np.stack([left * (1 - width * pan), right * (1 + width * pan)], axis=1)
         else:
             sig = _normalise(event(kind, seed * 131 + k))

@@ -28,6 +28,13 @@ class TestEverySoundIsMade(unittest.TestCase):
 
 
 class TestTheStem(unittest.TestCase):
+    def test_a_bed_shorter_than_its_stereo_delay_still_renders(self):
+        # A sliver of a span (a frame where two shots meet) once made the two sides different lengths.
+        for seconds in (0.001, 0.005, 0.011, 0.02):
+            out = foley.render([{"kind": "wind", "start": 1.0, "end": 1.0 + seconds}], 2.0)
+            self.assertEqual(out.shape, (2 * foley.RATE, 2))
+            self.assertTrue(np.isfinite(out).all())
+
     def test_events_land_on_their_second_and_beds_span_their_shot(self):
         stem = foley.render([{"kind": "rain", "start": 1.0, "end": 2.0, "gain": -12},
                              {"kind": "coin", "start": 2.5, "gain": -6}], 4.0, seed=1)
