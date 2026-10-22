@@ -105,3 +105,12 @@ hosted Wan 2.2): the process calls the provider's API, so it needs no GPU, no to
 (`requirements-hosted.txt`). It registers as `orazaka-worker-media-hosted`, drains `orazaka.jobs.video.hosted`
 (`job.hostedvideo.*`, never matched by the GPU worker's `job.video.*`) and refuses a model that runs on a GPU by name.
 Dev runs it always on inside the core container; the GPU worker stays off until a film needs it.
+
+## Progress stages (orazaka-worker-media#64)
+
+`job.<id>.progress` on the `orazaka.events` exchange carries, besides `jobId`, `progress` and `phase`, optional keys
+(ADR-048; a consumer that ignores them is unaffected): `stage` (`COLD_START_WAKEUP` -> `STREAMING_WEIGHTS_NVME` ->
+`INFERENCE_STEP` -> `SANDBOX_VERIFICATION` -> `COMPLETED`), `weightsPercent` (bytes of weights really read), `step` /
+`steps`, `etaSeconds` (median of the last loads per model and hardware; a sliding mean of the latest steps) and `at`
+(monotonic epoch ms). No history, no ETA; an unknown total, no percentage. `MEDIA_ETA_FILE` keeps the history across
+restarts. Code: `app/stages.py`; the streamed weight load (#63) feeds `StageReporter.weights`.
