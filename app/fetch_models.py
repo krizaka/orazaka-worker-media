@@ -19,6 +19,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+from app import model_cache
 from app.video_models import load_manifest
 
 #: What a Wan pipeline reads from its repository. The text encoder is skipped when the model borrows
@@ -108,6 +109,9 @@ def fetch(profile: str, models_dir: Path) -> None:
     """Everything a profile needs, on the volume."""
     from huggingface_hub import snapshot_download  # noqa: PLC0415 — only the GPU image has it
 
+    def snapshot_dir(repo, revision, cache_dir):
+        return snapshot_download(repo_id=repo, revision=revision, cache_dir=cache_dir, local_files_only=True)
+
     work = plan(profile)
     hf_home = models_dir / "hf"
     scratch = Path(os.environ.get("MEDIA_SCRATCH_DIR", "/var/lib/orazaka-scratch")) / "hf"
@@ -122,13 +126,38 @@ def fetch(profile: str, models_dir: Path) -> None:
             max_workers=16,
         )
         print(f"[fetch] {repo} ready in {time.time() - started:.0f}s", flush=True)
+        # The model-cache contract: size + SHA-256 per file beside the snapshot (app/model_cache.py).
+        snapshot = Path(snapshot_dir(repo, revision, cache_dir=str((scratch if cache == "scratch" else hf_home) / "hub")))
+        if model_cache.verify(snapshot):
+            model_cache.write_manifest(snapshot)
     for spec in work["files"]:
         fetch_file(spec, models_dir / "sd")
 
 
+def verify_profile(profile: str, models_dir: Path, deep: bool = False) -> list[str]:
+    """``--verify``: every snapshot of the profile against its manifest (sizes, or digests with ``--deep``)."""
+    from huggingface_hub import snapshot_download  # noqa: PLC0415
+
+    problems = []
+    for repo, revision, _patterns, cache in plan(profile)["hf"]:
+        hub = str(((Path(os.environ.get("MEDIA_SCRATCH_DIR", "/var/lib/orazaka-scratch")) / "hf") if cache == "scratch" else models_dir / "hf") / "hub")
+        try:
+            snapshot = snapshot_download(repo_id=repo, revision=revision, cache_dir=hub, local_files_only=True)
+        except Exception as absent:  # noqa: BLE001
+            problems.append(f"{repo}: not on the volume ({absent})")
+            continue
+        problems += [f"{repo}: {p}" for p in model_cache.verify(Path(snapshot), deep=deep)]
+    return problems
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) >= 2 and argv[1] == "--verify":
+        models_dir = Path(os.environ.get("MEDIA_MODELS_DIR", "/models"))
+        problems = verify_profile(argv[2], models_dir, deep="--deep" in argv[3:]) if len(argv) >= 3 else ["usage: --verify <profile> [--deep]"]
+        print("\n".join(problems) or f"[fetch] profile {argv[2]} verified", flush=True)
+        return 1 if problems else 0
     if len(argv) != 2:
-        print("usage: python -m app.fetch_models big|small", file=sys.stderr)
+        print("usage: python -m app.fetch_models big|small | --verify <profile> [--deep]", file=sys.stderr)
         return 2
     models_dir = Path(os.environ.get("MEDIA_MODELS_DIR", "/models"))
     fetch(argv[1], models_dir)

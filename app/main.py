@@ -610,6 +610,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                         seed=seed_val,
                         negative_prompt=payload.get("negativePrompt") or None,
                         progress_callback=progress_cb,
+                        weights_progress=stage_reporter.weights if stage_reporter else None,
                         image=wan_image,
                         focus=_focus(payload),
                         fallback_sizes=tuple(ladder[1:]) if wan_image is not None else (),

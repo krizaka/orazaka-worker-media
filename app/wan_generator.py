@@ -12,9 +12,10 @@ from __future__ import annotations
 import gc
 import os
 import time
+from pathlib import Path
 from typing import Callable, Optional
 
-from app import job_control
+from app import job_control, model_cache
 from app.video_models import (
     InvalidVideoRequest,
     VideoModel,
@@ -86,7 +87,31 @@ def is_resident(model_name: str, from_image: bool = False) -> bool:
         return False
 
 
-def _load(model: VideoModel, from_image: bool = False):
+def _staged_source(model: VideoModel, progress=None):
+    """The model's snapshot on local NVMe (``MEDIA_MODELS_STAGE_DIR``) or warmed by parallel readers
+    (``MEDIA_MODELS_PREFETCH=1``); None keeps the plain load from the volume (the model-cache contract, #63)."""
+    stage_dir = os.environ.get("MEDIA_MODELS_STAGE_DIR")
+    prefetch = os.environ.get("MEDIA_MODELS_PREFETCH") == "1"
+    if not stage_dir and not prefetch:
+        return None
+    try:
+        from huggingface_hub import snapshot_download  # noqa: PLC0415
+
+        snapshot = Path(
+            snapshot_download(
+                model.repo, revision=model.revision, local_files_only=True, cache_dir=hub_cache(model) or None
+            )
+        )
+        if stage_dir:
+            return str(model_cache.resolve(snapshot, stage_dir, progress=progress))
+        model_cache.prefetch(snapshot, progress=progress)
+        return None
+    except Exception as unusable:  # noqa: BLE001 — staging is an optimisation: the plain load always remains
+        print(f"[wan] staging {model.name} unavailable ({unusable}); loading from the volume", flush=True)
+        return None
+
+
+def _load(model: VideoModel, from_image: bool = False, weights_progress=None):
     """Loads one Wan pipeline from the local cache, evicting whichever was resident.
 
     ``from_image`` loads the image-to-video class. For Wan 2.2 TI2V 5B the same weights serve both: the
@@ -112,8 +137,12 @@ def _load(model: VideoModel, from_image: bool = False):
     common = {"revision": model.revision, "local_files_only": True}
     if hub_cache(model):
         common["cache_dir"] = hub_cache(model)
+    staged = _staged_source(model, weights_progress)
+    repo = staged or model.repo
+    if staged:  # a local directory: no revision, no hub cache
+        common = {"local_files_only": True}
     vae = AutoencoderKLWan.from_pretrained(
-        model.repo, subfolder="vae", torch_dtype=torch.float32, **common
+        repo, subfolder="vae", torch_dtype=torch.float32, **common
     )
     extra = {}
     if model.text_encoder_from:
@@ -122,16 +151,17 @@ def _load(model: VideoModel, from_image: bool = False):
         from transformers import UMT5EncoderModel  # noqa: PLC0415
 
         donor = find(model.text_encoder_from, load_manifest())
+        donor_staged = _staged_source(donor, weights_progress)
         extra["text_encoder"] = UMT5EncoderModel.from_pretrained(
-            donor.repo,
+            donor_staged or donor.repo,
             subfolder="text_encoder",
             torch_dtype=torch.bfloat16,
-            revision=donor.revision,
+            **({} if donor_staged else {"revision": donor.revision}),
             local_files_only=True,
         )
     if from_image:
         pipe = WanImageToVideoPipeline.from_pretrained(
-            model.repo,
+            repo,
             vae=vae,
             torch_dtype=torch.bfloat16,
             # The 5B's own config; the A14B I2V conditions through its 36-channel input instead.
@@ -141,7 +171,7 @@ def _load(model: VideoModel, from_image: bool = False):
         )
     else:
         pipe = WanPipeline.from_pretrained(
-            model.repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra
+            repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra
         )
     if model.lora:
         _load_lora(pipe, model)
@@ -156,7 +186,9 @@ def _load(model: VideoModel, from_image: bool = False):
         placement = f"resident on {device}"
     if hasattr(pipe.vae, "enable_tiling"):
         pipe.vae.enable_tiling()
-    print(f"[wan] {model.name} loaded in {time.time() - started:.0f}s, {placement}", flush=True)
+    loaded = time.time() - started
+    stage_note = " (staged on NVMe)" if staged else (" (prefetched)" if os.environ.get("MEDIA_MODELS_PREFETCH") == "1" else "")
+    print(f"[wan] {model.name} loaded in {loaded:.1f}s{stage_note}, {placement}", flush=True)
     _pipe = pipe
     _pipe_name = _resident_name(model, from_image)
     return pipe
@@ -272,6 +304,7 @@ def generate_wan_frames(
     image=None,
     focus: tuple[float, float] = (0.5, 0.5),
     fallback_sizes: tuple = (),
+    weights_progress: Optional[Callable] = None,
 ) -> list:
     """Runs one Wan generation and returns its frames as PIL images.
 
@@ -299,7 +332,7 @@ def generate_wan_frames(
         )
     torch = _torch()
     wanted = _resident_name(model, from_image)
-    pipe = _pipe if _pipe_name == wanted else _load(model, from_image)
+    pipe = _pipe if _pipe_name == wanted else _load(model, from_image, weights_progress)
     ladder = [(int(width), int(height)), *[(int(w), int(h)) for w, h in fallback_sizes]]
     last_failure: Exception | None = None
     for w, h in ladder:
