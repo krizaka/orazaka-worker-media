@@ -115,5 +115,30 @@ class TestTimedLoad(unittest.TestCase):
         self.assertIn("2.8 GB/s", calls[0])
 
 
+class TestLocalSnapshot(unittest.TestCase):
+    """The worker fetches only the files a model needs (allow patterns), so Hugging Face's own `snapshot_download(local_files_only=True)`
+    calls the snapshot incomplete and raises: found on the first measurement pod (#63), where it also silently turned NVMe staging off.
+    The snapshot is found by its layout instead."""
+
+    def test_the_snapshot_directory_is_found_by_layout_even_when_only_some_files_were_fetched(self):
+        cache = Path(tempfile.mkdtemp())
+        snap = make_snapshot(cache / "models--Wan-AI--Wan2.2-TI2V-5B-Diffusers" / "snapshots" / "abc123", {"transformer/x.safetensors": b"1"})
+        self.assertEqual(snap, model_cache.local_snapshot("Wan-AI/Wan2.2-TI2V-5B-Diffusers", "abc123", str(cache)))
+
+    def test_the_cache_defaults_to_HF_HUB_CACHE(self):
+        cache = Path(tempfile.mkdtemp())
+        snap = make_snapshot(cache / "models--o--n" / "snapshots" / "r1", {"f": b"1"})
+        previous = os.environ.get("HF_HUB_CACHE")
+        os.environ["HF_HUB_CACHE"] = str(cache)
+        try:
+            self.assertEqual(snap, model_cache.local_snapshot("o/n", "r1"))
+        finally:
+            os.environ.pop("HF_HUB_CACHE") if previous is None else os.environ.update(HF_HUB_CACHE=previous)
+
+    def test_a_snapshot_that_is_not_there_says_so(self):
+        with self.assertRaises(FileNotFoundError):
+            model_cache.local_snapshot("o/n", "missing", str(tempfile.mkdtemp()))
+
+
 if __name__ == "__main__":
     unittest.main()

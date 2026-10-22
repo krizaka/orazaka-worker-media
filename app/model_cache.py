@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import threading
 import time
@@ -23,6 +24,22 @@ from pathlib import Path
 MANIFEST = ".manifest.json"
 CHUNK = 64 * 1024 * 1024
 WORKERS = 8
+
+
+def local_snapshot(repo: str, revision: str, cache_dir: str | None = None) -> Path:
+    """The directory of a snapshot already on disk, found by the hub's layout (``models--<org>--<name>/snapshots/<revision>``).
+
+    Not ``snapshot_download(local_files_only=True)``: the worker fetches only the files a model needs, which that call reports
+    as an incomplete snapshot.
+
+    Raises:
+        FileNotFoundError: the snapshot is not under the cache.
+    """
+    root = Path(cache_dir or os.environ.get("HF_HUB_CACHE") or Path(os.environ.get("HF_HOME", "~/.cache/huggingface")).expanduser() / "hub")
+    snapshot = root / ("models--" + repo.replace("/", "--")) / "snapshots" / revision
+    if not snapshot.is_dir():
+        raise FileNotFoundError(f"{repo}@{revision} is not under {root}")
+    return snapshot
 
 
 def _files(root: Path):

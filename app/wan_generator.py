@@ -95,13 +95,7 @@ def _staged_source(model: VideoModel, progress=None):
     if not stage_dir and not prefetch:
         return None
     try:
-        from huggingface_hub import snapshot_download  # noqa: PLC0415
-
-        snapshot = Path(
-            snapshot_download(
-                model.repo, revision=model.revision, local_files_only=True, cache_dir=hub_cache(model) or None
-            )
-        )
+        snapshot = model_cache.local_snapshot(model.repo, model.revision, hub_cache(model))
         if stage_dir:
             return str(model_cache.resolve(snapshot, stage_dir, progress=progress))
         model_cache.prefetch(snapshot, progress=progress)
