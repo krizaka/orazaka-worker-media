@@ -1,0 +1,17 @@
+# A GitHub Release for every merge that has news (krizaka/.github#184): English and French, tagged YYYY.MM.DD.N, read by
+# krizaka.com's changelog. Add `Release-note-en:` / `Release-note-fr:` lines to a PR to word its line yourself.
+name: Release notes
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    uses: krizaka/.github/.github/workflows/release-notes.yml@5a6ae3ac28625b1dd1d1468ca31b44dddd133094 # main
+    secrets:
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
