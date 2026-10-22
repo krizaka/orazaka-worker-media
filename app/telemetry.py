@@ -47,19 +47,37 @@ def _publish_job_event(routing_key: str, payload: dict) -> None:
 PHASES = ("queued", "loading", "generating", "encoding", "uploading")
 
 
-def progress_payload(job_id: str, progress: int, phase=None, step=None, steps=None) -> dict:
-    """The progress event: the percentage, and — when known — the phase and the step n of N."""
+def progress_payload(
+    job_id: str, progress: int, phase=None, step=None, steps=None, stage=None, weights_percent=None, eta_seconds=None, at=None
+) -> dict:
+    """The progress event: the percentage, and — when known — the phase, the step n of N and the stage.
+
+    The stage keys (``stage``, ``weightsPercent``, ``etaSeconds``, ``at``) are optional on the wire
+    (ADR-048, orazaka-worker-media#64): a consumer that does not know them reads the rest unchanged.
+    """
+    from app.stages import STAGES
+
     payload = {"jobId": job_id, "progress": int(progress)}
     if phase in PHASES:
         payload["phase"] = phase
     if isinstance(step, int) and isinstance(steps, int) and steps > 0:
         payload["step"] = step
         payload["steps"] = steps
+    if stage in STAGES:
+        payload["stage"] = stage
+        for key, value in (("weightsPercent", weights_percent), ("etaSeconds", eta_seconds), ("at", at)):
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                payload[key] = value
     return payload
 
 
-def send_progress_update(job_id: str, progress: int, phase=None, step=None, steps=None) -> None:
-    _publish_job_event(f"job.{job_id}.progress", progress_payload(job_id, progress, phase, step, steps))
+def send_progress_update(
+    job_id: str, progress: int, phase=None, step=None, steps=None, stage=None, weights_percent=None, eta_seconds=None, at=None
+) -> None:
+    _publish_job_event(
+        f"job.{job_id}.progress",
+        progress_payload(job_id, progress, phase, step, steps, stage, weights_percent, eta_seconds, at),
+    )
 
 
 def send_job_cancelled(job_id: str, hold_id=None) -> None:

@@ -45,6 +45,7 @@ from app import (
     main,
     sound,
     sound_generators,
+    stages,
     video_models,
 )
 from app import cut as film
@@ -777,6 +778,8 @@ def _on_message(channel, method, properties, body) -> None:
             send_job_cancelled(job_id, hold_id=hold_id)
             return
         send_progress_update(job_id, 0, phase="loading")
+        stage_reporter = stages.reporter_for(job_id, job.get("model"))
+        stage_reporter.wake()
         if _is_sound(method.routing_key):
             print(f"[consumer] received sound job {job_id}", flush=True)
             result, consumption = _sound(job)
@@ -794,6 +797,7 @@ def _on_message(channel, method, properties, body) -> None:
             print(f"[consumer] received video job {job_id}", flush=True)
             result, consumption = _generate(job)
             model = job.get("model") or None
+        stage_reporter.completed()
         send_job_done(job_id, result, hold_id=hold_id, consumption=consumption, model=model)
         print(f"[consumer] job {job_id} done: {result['url']}", flush=True)
     except job_control.JobCancelled:
@@ -819,6 +823,7 @@ def _on_message(channel, method, properties, body) -> None:
             # hold is carried so billing releases it.
             send_job_error(job_id, str(e), hold_id=hold_id, cause=EXECUTOR_FAULT)
     finally:
+        stages.release(job_id)
         activity.touch()
         # Acked from the connection's own thread (BlockingConnection is not thread-safe); a connection that is
         # gone cannot be acked — the broker requeued the message and its redelivery is skipped (_first_delivery).

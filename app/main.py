@@ -21,7 +21,7 @@ try:
 except ImportError:
     torch = None
 
-from app import job_control, remote_video, upscale, video_models
+from app import job_control, remote_video, stages, upscale, video_models
 from app.encoder import export_frames_to_video
 from app.generator import generate_video_frames
 from app.telemetry import resource_guard, send_progress_update
@@ -550,12 +550,16 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                     job_control.raise_if_cancelled(job_id)
                     send_progress_update(job_id, 0, phase="loading")
 
+                stage_reporter = stages.reporter_for(job_id, model_name)
+
                 def progress_cb(pipe_self: Any, step: int, timestep: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
                     if job_id:
                         # The step boundary: where a cancelled job ends, within one denoising step.
                         job_control.raise_if_cancelled(job_id)
                         progress = min(int((step + 1) / steps * 100), 100)
                         send_progress_update(job_id, progress, phase="generating", step=step + 1, steps=int(steps))
+                        if stage_reporter:
+                            stage_reporter.step(step + 1, int(steps))
                     return kwargs
 
                 duration = payload.get("durationSeconds") or payload.get("video_length") or 2
@@ -655,6 +659,8 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 if job_id:
                     job_control.raise_if_cancelled(job_id)
                     send_progress_update(job_id, 100, phase="encoding")
+                    if stage_reporter:
+                        stage_reporter.verify()
                 if output_path:
                     safe_output_path = validate_safe_path(output_path)
                     os.makedirs(os.path.dirname(safe_output_path), exist_ok=True)
