@@ -74,11 +74,10 @@ def result_line(mode: str, model: str, seconds: float, size_bytes: int, extra: d
 
 
 def _snapshot(model):
-    from huggingface_hub import snapshot_download  # noqa: PLC0415
+    from app import model_cache  # noqa: PLC0415
+    from app.video_models import hub_cache  # noqa: PLC0415
 
-    from app.wan_generator import hub_cache  # noqa: PLC0415
-
-    return Path(snapshot_download(model.repo, revision=model.revision, local_files_only=True, cache_dir=hub_cache(model) or None))
+    return model_cache.local_snapshot(model.repo, model.revision, hub_cache(model))
 
 
 def measure_load(model_name: str, mode: str) -> str:

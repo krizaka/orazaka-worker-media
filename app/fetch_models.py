@@ -109,8 +109,7 @@ def fetch(profile: str, models_dir: Path) -> None:
     """Everything a profile needs, on the volume."""
     from huggingface_hub import snapshot_download  # noqa: PLC0415 — only the GPU image has it
 
-    def snapshot_dir(repo, revision, cache_dir):
-        return snapshot_download(repo_id=repo, revision=revision, cache_dir=cache_dir, local_files_only=True)
+    snapshot_dir = model_cache.local_snapshot  # by layout: the files fetched are only the model's, which the hub calls incomplete
 
     work = plan(profile)
     hf_home = models_dir / "hf"
@@ -136,14 +135,12 @@ def fetch(profile: str, models_dir: Path) -> None:
 
 def verify_profile(profile: str, models_dir: Path, deep: bool = False) -> list[str]:
     """``--verify``: every snapshot of the profile against its manifest (sizes, or digests with ``--deep``)."""
-    from huggingface_hub import snapshot_download  # noqa: PLC0415
-
     problems = []
     for repo, revision, _patterns, cache in plan(profile)["hf"]:
         hub = str(((Path(os.environ.get("MEDIA_SCRATCH_DIR", "/var/lib/orazaka-scratch")) / "hf") if cache == "scratch" else models_dir / "hf") / "hub")
         try:
-            snapshot = snapshot_download(repo_id=repo, revision=revision, cache_dir=hub, local_files_only=True)
-        except Exception as absent:  # noqa: BLE001
+            snapshot = model_cache.local_snapshot(repo, revision, hub)
+        except FileNotFoundError as absent:
             problems.append(f"{repo}: not on the volume ({absent})")
             continue
         problems += [f"{repo}: {p}" for p in model_cache.verify(Path(snapshot), deep=deep)]
