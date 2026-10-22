@@ -15,6 +15,8 @@ import sys
 import time
 from pathlib import Path
 
+ACCELERATIONS = ("fp8", "firstblock")  # applied in this order, whatever order they are asked in
+
 PROMPT = "A red kite flying over a calm lake at sunrise, gentle camera pan, cinematic, soft light"
 
 
@@ -36,6 +38,31 @@ def evict(root: Path) -> int:
             except OSError:
                 pass
     return total
+
+
+def parse_accel(value: str) -> tuple[str, ...]:
+    """``none`` | ``fp8`` | ``firstblock`` | ``fp8+firstblock``: which accelerations a render measures.
+
+    Refused by name when unknown: a measurement of something else than asked is worse than none.
+    """
+    names = [n for n in (value or "none").lower().split("+") if n and n != "none"]
+    for name in names:
+        if name not in ACCELERATIONS:
+            raise SystemExit(f"unknown acceleration '{name}' (known: none, {', '.join(ACCELERATIONS)})")
+    return tuple(a for a in ACCELERATIONS if a in names)
+
+
+def apply_acceleration(pipe, accel: tuple[str, ...], threshold: float, *, fp8_dtype=None, cache_config=None, compute_dtype=None) -> None:
+    """Applies diffusers' own accelerations to the resident Wan transformer (nothing here changes the worker).
+
+    ``fp8``: layerwise casting, the weights kept in float8 (E4M3) and upcast to bf16 per layer, which halves the
+    transformer's memory and its read from the volume. ``firstblock``: FirstBlockCache, which skips a step's remaining
+    blocks when the first block's output barely moved (``threshold``); it needs no calibration, unlike MagCache.
+    """
+    if "fp8" in accel:
+        pipe.transformer.enable_layerwise_casting(storage_dtype=fp8_dtype, compute_dtype=compute_dtype)
+    if "firstblock" in accel:
+        pipe.transformer.enable_cache(cache_config(threshold=threshold))
 
 
 def result_line(mode: str, model: str, seconds: float, size_bytes: int, extra: dict | None = None) -> str:
@@ -81,22 +108,44 @@ def measure_load(model_name: str, mode: str) -> str:
     return result_line(mode, model_name, seconds, size)
 
 
-def measure_render(model_name: str, steps: int, seed: int, out: Path) -> str:
+def measure_render(model_name: str, steps: int, seed: int, out: Path, accel: tuple[str, ...] = (), threshold: float = 0.2) -> str:
     from app import wan_generator  # noqa: PLC0415
     from app.video_models import find  # noqa: PLC0415
 
     model = find(model_name)
     width, height = model.sizes["9:16"] if hasattr(model, "sizes") else (480, 832)
-    wan_generator._load(model, from_image=False)
+    pipe = wan_generator._load(model, from_image=False)
+    peak = None
+    if accel:
+        import torch  # noqa: PLC0415
+        from diffusers import FirstBlockCacheConfig  # noqa: PLC0415
+
+        apply_acceleration(pipe, accel, threshold, fp8_dtype=torch.float8_e4m3fn, cache_config=FirstBlockCacheConfig, compute_dtype=torch.bfloat16)
+    try:
+        import torch  # noqa: PLC0415
+
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+            peak = True
+    except ImportError:
+        pass
     started = time.time()
     frames = wan_generator.generate_wan_frames(
         model_name, PROMPT, width, height, model.max_frames, steps, seed
     )
     seconds = time.time() - started
     out.mkdir(parents=True, exist_ok=True)
+    label = "+".join(accel) or "none"
     for index in (0, len(frames) // 2, len(frames) - 1):
-        frames[index].save(out / f"{model_name}-s{seed}-f{index}.png")
-    return result_line("render", model_name, seconds, 0, {"steps": steps, "frames": len(frames), "seed": seed})
+        frames[index].save(out / f"{model_name}-s{seed}-{label}-f{index}.png")
+    extra = {"steps": steps, "frames": len(frames), "seed": seed, "accel": label}
+    if accel:
+        extra["threshold"] = threshold
+    if peak:
+        import torch  # noqa: PLC0415
+
+        extra["peakGb"] = round(torch.cuda.max_memory_allocated() / 1e9, 1)
+    return result_line("render", model_name, seconds, 0, extra)
 
 
 def main(argv: list[str]) -> int:
@@ -110,8 +159,13 @@ def main(argv: list[str]) -> int:
     render.add_argument("--steps", type=int, default=20)
     render.add_argument("--seed", type=int, default=7)
     render.add_argument("--out", type=Path, default=Path("/tmp/measure"))  # noqa: S108
+    render.add_argument("--accel", default="none", help="none | fp8 | firstblock | fp8+firstblock")
+    render.add_argument("--threshold", type=float, default=0.2, help="FirstBlockCache threshold")
     args = parser.parse_args(argv)
-    line = measure_load(args.model, args.mode) if args.what == "load" else measure_render(args.model, args.steps, args.seed, args.out)
+    if args.what == "load":
+        line = measure_load(args.model, args.mode)
+    else:
+        line = measure_render(args.model, args.steps, args.seed, args.out, parse_accel(args.accel), args.threshold)
     print(line, flush=True)
     return 0
 
