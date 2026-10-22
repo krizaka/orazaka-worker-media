@@ -114,3 +114,12 @@ Dev runs it always on inside the core container; the GPU worker stays off until 
 `steps`, `etaSeconds` (median of the last loads per model and hardware; a sliding mean of the latest steps) and `at`
 (monotonic epoch ms). No history, no ETA; an unknown total, no percentage. `MEDIA_ETA_FILE` keeps the history across
 restarts. Code: `app/stages.py`; the streamed weight load (#63) feeds `StageReporter.weights`.
+
+## Model-cache contract (orazaka-worker-media#63)
+
+A model is one directory with `.manifest.json` beside its files (size + SHA-256 each), written by `python -m app.fetch_models <profile>`
+and checked by `python -m app.fetch_models --verify <profile> [--deep]` (sizes by default, digests with `--deep`; a partial or
+corrupt file is reported, a verified model is never fetched again). `MEDIA_MODELS_STAGE_DIR` (local NVMe) stages a verified
+snapshot there with parallel readers before the load and loads from it (the volume stays the source of truth; unusable stage dir,
+plain load); `MEDIA_MODELS_PREFETCH=1` warms the page cache with parallel readers instead. Every Wan load logs its seconds.
+Both feed `StageReporter.weights` (the `STREAMING_WEIGHTS_NVME` percentage). Code: `app/model_cache.py`.
