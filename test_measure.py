@@ -22,6 +22,19 @@ class TestMeasure(unittest.TestCase):
         self.assertEqual(0, measure.evict(tmp / "absent"))
 
 
+class TestLoadModes(unittest.TestCase):
+    def test_the_load_modes_are_the_four_the_decision_compares(self):
+        import re
+        source = Path(measure.__file__).read_text()
+        modes = re.search(r'choices=\[([^\]]+)\], default="volume"', source).group(1)
+        self.assertEqual(['"volume"', '"stage"', '"warm-stage"', '"prefetch"'], [m.strip() for m in modes.split(",")])
+
+    def test_the_heavy_imports_happen_before_the_clock(self):
+        source = Path(measure.__file__).read_text()
+        load = source[source.index("def measure_load"):source.index("def measure_render")]
+        self.assertLess(load.index("warm_imports()"), load.index("started = time.time()"))
+
+
 class FakeTransformer:
     def __init__(self):
         self.calls = []

@@ -1,7 +1,7 @@
 """Measure a model's load and a clip's render, the numbers every claim of #63 is made of.
 
-``python -m app.measure load <model> --mode volume|stage|prefetch`` evicts the model's files from the page cache
-(and, for ``stage``, removes the NVMe copy), loads the pipeline the way the worker does and prints one JSON line.
+``python -m app.measure load <model> --mode volume|stage|warm-stage|prefetch`` evicts the model's files from the page cache
+(and, for ``stage``, removes the NVMe copy; ``warm-stage`` keeps it: a pod that has served this model before), loads the pipeline the way the worker does and prints one JSON line.
 ``python -m app.measure render <model> --steps N --seed S --out DIR`` makes one clip (fixed prompt and seed, so before
 and after compare) and prints the render seconds. Nothing here changes the worker's behaviour.
 """
@@ -80,19 +80,30 @@ def _snapshot(model):
     return model_cache.local_snapshot(model.repo, model.revision, hub_cache(model))
 
 
+def warm_imports() -> None:
+    """Imports the heavy libraries before any clock starts: on a pod the venv lives on the network volume, and the first import of
+    torch, diffusers and transformers took ~30 s of the first measurement, which is not the weights' load."""
+    import diffusers  # noqa: F401, PLC0415
+    import torch  # noqa: F401, PLC0415
+    import transformers  # noqa: F401, PLC0415
+
+
 def measure_load(model_name: str, mode: str) -> str:
     from app import wan_generator  # noqa: PLC0415
     from app.video_models import find  # noqa: PLC0415
+
+    warm_imports()
 
     model = find(model_name)
     snapshot = _snapshot(model)
     size = sum(p.stat().st_size for p in snapshot.rglob("*") if p.is_file())
     stage_dir = os.environ.get("MEDIA_MODELS_STAGE_DIR")
     os.environ.pop("MEDIA_MODELS_PREFETCH", None)
-    if mode == "stage":
+    if mode in ("stage", "warm-stage"):
         if not stage_dir:
-            raise SystemExit("--mode stage needs MEDIA_MODELS_STAGE_DIR")
-        shutil.rmtree(Path(stage_dir) / snapshot.name, ignore_errors=True)
+            raise SystemExit(f"--mode {mode} needs MEDIA_MODELS_STAGE_DIR")
+        if mode == "stage":  # a fresh pod: the copy from the volume is part of the load
+            shutil.rmtree(Path(stage_dir) / snapshot.name, ignore_errors=True)
     elif mode == "prefetch":
         os.environ["MEDIA_MODELS_PREFETCH"] = "1"
         os.environ.pop("MEDIA_MODELS_STAGE_DIR", None)
@@ -152,7 +163,7 @@ def main(argv: list[str]) -> int:
     sub = parser.add_subparsers(dest="what", required=True)
     load = sub.add_parser("load")
     load.add_argument("model")
-    load.add_argument("--mode", choices=["volume", "stage", "prefetch"], default="volume")
+    load.add_argument("--mode", choices=["volume", "stage", "warm-stage", "prefetch"], default="volume")
     render = sub.add_parser("render")
     render.add_argument("model")
     render.add_argument("--steps", type=int, default=20)
