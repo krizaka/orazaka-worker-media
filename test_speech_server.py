@@ -23,7 +23,7 @@ class TestSpeechRequest(unittest.TestCase):
 
     def test_a_proxied_path_cannot_choose_the_host_or_walk_out(self):
         self.assertEqual("http://127.0.0.1:8089/v1/images?x=1", s.upstream_url("127.0.0.1:8089", "/v1/images?x=1"))
-        for bad in ("@evil.test/x", "//evil.test/x", "v1/x", "/a/../b", "/a\\b", ""):
+        for bad in ("@evil.test/x", "//evil.test/x", "v1/x", "/a/../b", "/a\\b", "", "/a/%2e%2e/b", "/%2Fevil.test/x", "/a%5cb"):
             with self.subTest(bad), self.assertRaises(ValueError):
                 s.upstream_url("127.0.0.1:8089", bad)
 

@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -96,7 +97,8 @@ def upstream_url(upstream: str, path: str) -> str:
     ``//host/x`` or ``@host`` would let the request's own value choose the authority (SSRF) and ``..`` would walk out of
     the engine's API; both are refused. The engine is on this machine's loopback (plain HTTP by design, no TLS there).
     """
-    if not path.startswith("/") or path.startswith("//") or "\\" in path or any(p == ".." for p in path.split("?", 1)[0].split("/")):
+    route = urllib.parse.unquote(path.split("?", 1)[0])  # `%2e%2e` and `%2f` are judged as the engine will read them
+    if not path.startswith("/") or route.startswith("//") or "\\" in route or any(p == ".." for p in route.split("/")):
         raise ValueError(path)
     return f"http://{upstream}{path}"  # NOSONAR — loopback only
 
