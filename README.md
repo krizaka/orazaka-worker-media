@@ -17,6 +17,7 @@ Native (Metal) Python worker for image/video generation and media composition, s
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Orazaka](https://img.shields.io/badge/part%20of-Orazaka-f67e23)](https://github.com/krizaka/orazaka#repositories)
 [![Docs](https://img.shields.io/badge/docs-krizaka.com-f67e23)](https://www.krizaka.com/en/products/orazaka)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-worker-media&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-worker-media) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-worker-media&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-worker-media) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-worker-media&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-worker-media) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-worker-media&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-worker-media) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=krizaka_orazaka-worker-media&metric=coverage)](https://sonarcloud.io/summary/new_code?id=krizaka_orazaka-worker-media)
 
 [Documentation](https://www.krizaka.com/en/products/orazaka) · [Website](https://www.krizaka.com) · [Krizaka on GitHub](https://github.com/krizaka)
 
