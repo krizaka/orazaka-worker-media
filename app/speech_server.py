@@ -90,6 +90,17 @@ def to_mp3(wav: bytes) -> bytes:
 PASSED_TYPES = ("application/json", "image/png", "image/jpeg", "image/webp", "text/plain")
 
 
+def upstream_url(upstream: str, path: str) -> str:
+    """The sd-server URL of a request path (pure): an origin-form path only, so the host is always the configured one.
+
+    ``//host/x`` or ``@host`` would let the request's own value choose the authority (SSRF) and ``..`` would walk out of
+    the engine's API; both are refused. The engine is on this machine's loopback (plain HTTP by design, no TLS there).
+    """
+    if not path.startswith("/") or path.startswith("//") or "\\" in path or any(p == ".." for p in path.split("?", 1)[0].split("/")):
+        raise ValueError(path)
+    return f"http://{upstream}{path}"  # NOSONAR — loopback only
+
+
 def safe_type(value: str | None) -> str:
     """One of PASSED_TYPES, chosen by prefix — never the upstream's string itself (pure)."""
     for known in PASSED_TYPES:
@@ -114,7 +125,12 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
         headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "content-length", "connection")}
-        request = urllib.request.Request(f"http://{self.upstream}{self.path}", data=body, method=self.command, headers=headers)
+        try:
+            target = upstream_url(self.upstream, self.path)
+        except ValueError:
+            self._send(400, json.dumps({"error": "bad request path"}).encode(), "application/json")
+            return
+        request = urllib.request.Request(target, data=body, method=self.command, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=900) as response:  # noqa: S310 — the local image engine only
                 self._send(response.status, response.read(), safe_type(response.headers.get("Content-Type")))

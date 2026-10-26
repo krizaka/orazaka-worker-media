@@ -21,6 +21,12 @@ class TestSpeechRequest(unittest.TestCase):
         self.assertEqual("application/json", s.safe_type("text/html\r\nSet-Cookie: x=1"))
         self.assertEqual("application/json", s.safe_type(None))
 
+    def test_a_proxied_path_cannot_choose_the_host_or_walk_out(self):
+        self.assertEqual("http://127.0.0.1:8089/v1/images?x=1", s.upstream_url("127.0.0.1:8089", "/v1/images?x=1"))
+        for bad in ("@evil.test/x", "//evil.test/x", "v1/x", "/a/../b", "/a\\b", ""):
+            with self.subTest(bad), self.assertRaises(ValueError):
+                s.upstream_url("127.0.0.1:8089", bad)
+
     def test_only_the_speech_path_is_answered_here(self):
         self.assertTrue(s.routes_to_speech("POST", "/v1/audio/speech"))
         self.assertFalse(s.routes_to_speech("POST", "/v1/images/generations"))

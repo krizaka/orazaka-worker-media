@@ -37,10 +37,10 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 ENV VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH
 RUN python3 -m venv /opt/venv \
- && pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+ && pip install --no-cache-dir --only-binary :all: pip==26.1.1 \
+ && pip install --no-cache-dir --only-binary :all: torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
 COPY requirements-cuda.txt /tmp/requirements-cuda.txt
-RUN pip install --no-cache-dir -r /tmp/requirements-cuda.txt
+RUN pip install --no-cache-dir --only-binary :all: -r /tmp/requirements-cuda.txt
 COPY --from=sdcpp /sd-server /usr/local/bin/sd-server
 
 WORKDIR /app

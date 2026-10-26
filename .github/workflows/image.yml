@@ -74,12 +74,16 @@ jobs:
 
       - name: Push
         if: github.event_name != 'pull_request'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          GIT_REF: ${{ github.ref }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
           short=$(git rev-parse --short=7 HEAD)
           docker tag "$IMAGE:ci" "$IMAGE:cuda-$short"
           docker push "$IMAGE:cuda-$short"
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$GIT_REF" = "refs/heads/main" ]; then
             docker tag "$IMAGE:ci" "$IMAGE:cuda-latest"
             docker push "$IMAGE:cuda-latest"
           fi
