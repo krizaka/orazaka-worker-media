@@ -37,6 +37,10 @@ def export_frames_to_video(
     output_path = os.path.abspath(os.path.realpath(output_path))
     if os.path.basename(output_path).startswith("-"):
         raise ValueError("Output path filename cannot start with a hyphen.")
+    # The encoder confines its own output (defence in depth): it never trusts that the caller validated.
+    from app import main  # deferred: main imports this module
+    if not any(os.path.commonpath([root, output_path]) == root for root in map(os.path.realpath, main._allowed_roots())):
+        raise PermissionError("Output path is outside the allowed directories.")
 
     # Try hardware-accelerated encoding using FFmpeg command line
     temp_dir = tempfile.mkdtemp()
