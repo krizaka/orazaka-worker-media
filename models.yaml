@@ -280,6 +280,7 @@ sound:
 
   # Video-to-audio foley, synchronised to the picture. MMAudio's code is MIT but its WEIGHTS are CC-BY-NC 4.0:
   # evaluation and non-commercial use only. Never a default; a job must ask for it by name.
+  # Refused unless the deployment sets MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS=true (a developer machine); off in production.
   mmaudio-large-44k-v2:
     kind: foley
     label: "MMAudio large 44k v2 (video-to-audio foley) — non-commercial"

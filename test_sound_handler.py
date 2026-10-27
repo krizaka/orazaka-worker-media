@@ -58,7 +58,17 @@ def test_music_bed_gives_the_clip_sound_and_keeps_a_silent_variant(world):
     assert consumption["durationSeconds"] == pytest.approx(3.0, abs=0.2)
 
 
-def test_foley_needs_the_non_commercial_model_by_name(world):
+def test_a_job_naming_non_commercial_weights_is_refused_in_production(world, monkeypatch):
+    _, calls = world
+    monkeypatch.delenv("MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS", raising=False)
+    with pytest.raises(consumer.InvalidJobPayload, match="non-commercial"):
+        consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4", "foley": "tea pouring",
+                             "foleyModel": "mmaudio-large-44k-v2"}))
+    assert calls == []          # refused before any download or generation
+
+
+def test_foley_needs_the_non_commercial_model_by_name(world, monkeypatch):
+    monkeypatch.setenv("MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS", "true")
     _, calls = world
     with pytest.raises(consumer.InvalidJobPayload, match="foleyModel"):
         consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4", "foley": "tea pouring"}))

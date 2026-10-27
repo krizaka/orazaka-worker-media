@@ -27,6 +27,19 @@ class UnknownSoundModel(ValueError):
     """The model is not one ``models.yaml`` describes for that kind."""
 
 
+class NonCommercialWeightRefused(UnknownSoundModel):
+    """The weights are licensed for non-commercial use only and this deployment has not opted in."""
+
+
+#: Set to ``true`` (a developer's machine, an evaluation) to run non-commercial weights. Off everywhere else, so a
+#: production deployment that bills customers can never serve them, whatever a job asks for by name.
+ALLOW_NON_COMMERCIAL_ENV = "MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS"
+
+
+def non_commercial_allowed(env: dict | None = None) -> bool:
+    return str((os.environ if env is None else env).get(ALLOW_NON_COMMERCIAL_ENV, "")).strip().lower() == "true"
+
+
 @dataclass(frozen=True)
 class SoundModel:
     name: str
@@ -49,11 +62,14 @@ def sound_models(manifest: dict | None = None) -> dict[str, SoundModel]:
     return found
 
 
-def resolve(kind: str, requested: str | None, manifest: dict | None = None) -> SoundModel | None:
+def resolve(kind: str, requested: str | None, manifest: dict | None = None,
+            env: dict | None = None) -> SoundModel | None:
     """The model of ``kind`` a job gets: the one it named, else the kind's commercial default, else none.
 
     Raises:
         UnknownSoundModel: the name is not a model of that kind in ``models.yaml``.
+        NonCommercialWeightRefused: the model's weights are non-commercial and ``MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS``
+            is not ``true``; refused here, before any download.
     """
     models = sound_models(manifest)
     if requested and requested.strip() not in ("", "default"):
@@ -61,6 +77,9 @@ def resolve(kind: str, requested: str | None, manifest: dict | None = None) -> S
         if chosen is None or chosen.kind != kind:
             names = ", ".join(sorted(n for n, m in models.items() if m.kind == kind))
             raise UnknownSoundModel(f"'{requested}' is not a {kind} model this worker runs ({names})")
+        if not chosen.commercial and not non_commercial_allowed(env):
+            raise NonCommercialWeightRefused(
+                f"'{chosen.name}' has non-commercial weights ({chosen.licence}) and this deployment does not run them")
         return chosen
     return next((m for m in models.values() if m.kind == kind and m.default), None)
 

@@ -643,7 +643,7 @@ def _sound(job: dict) -> tuple:
         if foley_prompt and foley_model is None:
             raise InvalidJobPayload(
                 "no commercially licensed foley model is installed: ask for one by name with foleyModel "
-                "(mmaudio-large-44k-v2 is non-commercial) or leave foley empty")
+                "(a non-commercial model is refused unless MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS=true) or leave foley empty")
 
         output_path, public_url = _output_paths(job["userId"], job["jobId"])
         stages = {}
