@@ -1,9 +1,24 @@
 Orazaka Media Worker
-Copyright 2026 Krizaka
+Copyright 2026 Technologies Krizaka Inc.
 
-This product includes software developed at Krizaka (https://krizaka.com)
-as part of the Orazaka platform (https://github.com/krizaka/orazaka).
+This product includes software developed at Krizaka (https://www.krizaka.com).
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use
-this file except in compliance with the License. You may obtain a copy of the
-License at http://www.apache.org/licenses/LICENSE-2.0
+LICENCE
+  From the commit that introduces this notice, this repository is licensed under
+  the Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2),
+  in LICENSE.md: any use except a Competing Use, and each version becomes
+  available under the Apache License, Version 2.0 two years after it is published.
+
+  Every commit before that one remains licensed under the Apache License,
+  Version 2.0 (LICENSE-APACHE), as it was published. The last Apache-2.0-only
+  commit at the time of writing is 7f14ef86d6bbaeacc5e840952065d4784035b528 (2026-10-26).
+
+  Why: https://github.com/krizaka/.github/blob/main/docs/adr/ADR-012-licensing-libraries-open-products-fair-source.md
+
+TRADEMARKS
+  Neither licence grants any right to the names Krizaka, Orazaka, Yomizaka,
+  Akinaza or the other Krizaka marks and birds:
+  https://github.com/krizaka/.github/blob/main/TRADEMARKS.md
+
+CONTRIBUTIONS
+  External contributions require the Krizaka Contributor Licence Agreement.
