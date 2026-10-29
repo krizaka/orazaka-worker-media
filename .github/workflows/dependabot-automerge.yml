@@ -4,8 +4,7 @@
 # Token-Permissions (OpenSSF Scorecard): read-only at the top, the write scopes on the job that needs them.
 name: Dependabot auto-merge
 
-on: pull_request_target
-
+on: pull_request_target # zizmor: ignore[dangerous-triggers] checks out nothing and runs no PR code; hands the event to the pinned reusable workflow
 permissions:
   contents: read
 
