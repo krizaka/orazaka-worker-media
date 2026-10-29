@@ -1,0 +1,19 @@
+# Security scan: gitleaks (secrets, whole history of the pull request) and zizmor (GitHub Actions vulnerabilities).
+# Logic lives in krizaka/.github (reusable, rule `security-scan` of docs/standards/rules.json). Pin by commit SHA:
+# `node scripts/pin-supply-chain.mjs` (and `--refresh` to move it).
+name: Security scan
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  security:
+    name: Security scan
+    uses: krizaka/.github/.github/workflows/security-scan.yml@839f499567717833f420b386e30a31181dc810e6 # main
+    permissions:
+      contents: read
