@@ -108,7 +108,7 @@ class TestTheGrade(unittest.TestCase):
 
 class TestTheLabel(unittest.TestCase):
     def test_the_label_is_in_the_metadata_and_not_burnt_in_by_default(self):
-        # orazaka#289 / orochia#349: the players draw the AI disclosure themselves (a quiet chip from the file's
+        # orazaka#289: the players draw the AI disclosure themselves (a quiet chip from the file's
         # provenance); a label burnt into the picture doubled it. It is drawn only when an edit asks (`burnLabel`).
         edit = cut.parse_edit(TWO, 2)
         self.assertFalse(edit.burn_label)

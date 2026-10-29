@@ -11,7 +11,7 @@ text instead — this module writes an **ASS** script (rendered by libass throug
 * **Safe areas** — everything sits inside the title-safe area (10 % of each side); a vertical (9:16) frame also keeps
   clear of the platforms' own interface: subtitles stand above its bottom quarter, titles below its top tenth.
 * **The label** — « AI-generated » in the language, small and quiet, top right inside the safe area, only when asked: the
-  players draw the disclosure themselves (orochia#349), and their watermark's top-left corner stays clear of all text.
+  players draw the disclosure themselves, and their watermark's top-left corner stays clear of all text.
 
 Everything but :func:`render` is pure. Faces are passed as a fonts folder (``fontsdir``): the worker ships none.
 """
@@ -37,7 +37,7 @@ VERTICAL_TOP_CLEAR = 0.10
 #: Where subtitles stand, from the bottom of the frame (orazaka#289 review: v1's sat too low): 16 % of a landscape frame,
 #: 26 % of a vertical one (above the platforms' captions and buttons).
 SUBTITLE_BOTTOM = {False: 0.16, True: 0.26}
-#: The player's own corner (Orochia's watermark, orochia#349: top-left): no text ever enters it, nor the label.
+#: The player's own corner (the player's watermark: top-left): no text ever enters it, nor the label.
 PLAYER_CORNER = (0.0, 0.0, 0.24, 0.16)
 
 MAX_LINE = 42
