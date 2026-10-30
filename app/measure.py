@@ -1,7 +1,7 @@
 """Measure a model's load and a clip's render, the numbers every claim of #63 is made of.
 
-``python -m app.measure load <model> --mode volume|stage|prefetch`` evicts the model's files from the page cache
-(and, for ``stage``, removes the NVMe copy), loads the pipeline the way the worker does and prints one JSON line.
+``python -m app.measure load <model> --mode volume|stage|warm-stage|prefetch`` evicts the model's files from the page cache
+(and, for ``stage``, removes the NVMe copy; ``warm-stage`` keeps it: a pod that has served this model before), loads the pipeline the way the worker does and prints one JSON line.
 ``python -m app.measure render <model> --steps N --seed S --out DIR`` makes one clip (fixed prompt and seed, so before
 and after compare) and prints the render seconds. Nothing here changes the worker's behaviour.
 """
@@ -81,24 +81,75 @@ def _snapshot(model):
     return model_cache.local_snapshot(model.repo, model.revision, hub_cache(model))
 
 
+def _resolve(module: str, names: tuple[str, ...]) -> None:
+    """Resolves the concrete classes of a lazy module (diffusers, transformers import their implementation on first access)."""
+    import importlib  # noqa: PLC0415
+
+    loaded = importlib.import_module(module)
+    for name in names:
+        getattr(loaded, name)
+
+
+def warm_imports(model=None) -> None:
+    """Imports the heavy libraries, and the exact classes the model's loader resolves, before any clock starts: on a pod the venv
+    lives on the network volume, and the first import of torch, diffusers and transformers (then of the pipeline classes behind
+    their lazy imports) took ~30 s of the first measurement, which is not the weights' load. No weights are loaded here."""
+    for module in ("torch", "diffusers", "transformers"):
+        _resolve(module, ())
+    if model is None:
+        return
+    if getattr(model, "pipeline", None) == "ltx":
+        _resolve("diffusers", ("LTXConditionPipeline",))
+        return
+    _resolve("diffusers", ("AutoencoderKLWan", "WanImageToVideoPipeline", "WanPipeline"))
+    if getattr(model, "text_encoder_from", None):
+        _resolve("transformers", ("UMT5EncoderModel",))
+
+
+def _snapshots_to_stage(model) -> list:
+    """The model's snapshot, and its text-encoder donor's when the loader stages that too."""
+    from app.video_models import find  # noqa: PLC0415
+
+    models = [model]
+    if getattr(model, "text_encoder_from", None):
+        models.append(find(model.text_encoder_from))
+    return [_snapshot(m) for m in models]
+
+
+def prepare_stage(model, stage_dir: str) -> None:
+    """``warm-stage``: the NVMe copy is made complete BEFORE the clock, so the timed load reads an existing copy.
+
+    A failure stops the measurement (``model_cache.stage`` raises; the loader's own ``resolve`` would fall back silently)."""
+    from app import model_cache  # noqa: PLC0415
+
+    for snapshot in _snapshots_to_stage(model):
+        model_cache.stage(snapshot, Path(stage_dir) / snapshot.name)
+
+
 def measure_load(model_name: str, mode: str) -> str:
     from app import wan_generator  # noqa: PLC0415
     from app.video_models import find  # noqa: PLC0415
 
     model = find(model_name)
+    warm_imports(model)
+
     snapshot = _snapshot(model)
     size = sum(p.stat().st_size for p in snapshot.rglob("*") if p.is_file())
     stage_dir = os.environ.get("MEDIA_MODELS_STAGE_DIR")
     os.environ.pop("MEDIA_MODELS_PREFETCH", None)
-    if mode == "stage":
+    if mode in ("stage", "warm-stage"):
         if not stage_dir:
-            raise SystemExit("--mode stage needs MEDIA_MODELS_STAGE_DIR")
-        shutil.rmtree(Path(stage_dir) / snapshot.name, ignore_errors=True)
+            raise SystemExit(f"--mode {mode} needs MEDIA_MODELS_STAGE_DIR")
+        if mode == "stage":  # a fresh pod: the copy from the volume is part of the load
+            shutil.rmtree(Path(stage_dir) / snapshot.name, ignore_errors=True)
+        else:  # a pod that has served this model before: the copy is there, complete, before the timer
+            prepare_stage(model, stage_dir)
     elif mode == "prefetch":
         os.environ["MEDIA_MODELS_PREFETCH"] = "1"
         os.environ.pop("MEDIA_MODELS_STAGE_DIR", None)
     else:
         os.environ.pop("MEDIA_MODELS_STAGE_DIR", None)
+        stage_dir = None
     evict(snapshot)
     if stage_dir:
         evict(Path(stage_dir))
@@ -153,7 +204,7 @@ def main(argv: list[str]) -> int:
     sub = parser.add_subparsers(dest="what", required=True)
     load = sub.add_parser("load")
     load.add_argument("model")
-    load.add_argument("--mode", choices=["volume", "stage", "prefetch"], default="volume")
+    load.add_argument("--mode", choices=["volume", "stage", "warm-stage", "prefetch"], default="volume")
     render = sub.add_parser("render")
     render.add_argument("model")
     render.add_argument("--steps", type=int, default=20)
