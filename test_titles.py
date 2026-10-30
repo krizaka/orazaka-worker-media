@@ -19,7 +19,7 @@ class TestTheScriptIsPure(unittest.TestCase):
         self.assertEqual(titles.Frame(1080, 1920).safe(), {"left": 108, "right": 108, "top": 192, "bottom": 461})
 
     def test_subtitles_sit_high_enough_and_nothing_enters_the_players_top_left_corner(self):
-        # orazaka#289 review: v1's subtitles sat too low; the Orochia player's watermark sits top-left (orochia#349).
+        # orazaka#289 review: v1's subtitles sat too low; the player's watermark sits top-left.
         for frame in (titles.Frame(1920, 1080), titles.Frame(1080, 1920)):
             ass = titles.script(frame, [titles.Text(0, 4, "The World of Krizaka", "main", sub="Dawn"),
                                         titles.Text(1, 3, "And when the night is longest… no one flies alone.")])

@@ -142,7 +142,7 @@ class Edit:
     #: ``1080p`` or ``2160p`` (4K: the source clips are upscaled to 2160 by SeedVR2, tiled).
     master: str = "1080p"
     #: Burn the AI label into the picture (orazaka#289): off by default — the players draw the disclosure from the file's
-    #: provenance (Orochia's chip, orochia#349) and the metadata always says AI-generated; on for a platform that does not.
+    #: provenance (the player's chip) and the metadata always says AI-generated; on for a platform that does not.
     burn_label: bool = False
     #: Titles, captions and the drawn label. ``False``: a clean master, its text drawn per language by app/deliver.py
     #: (the file's metadata still says AI-generated).
