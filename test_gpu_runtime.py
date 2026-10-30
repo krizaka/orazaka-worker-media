@@ -125,10 +125,35 @@ class TestModelRouting(unittest.TestCase):
         recipes = workspace / "orazaka-apps" / "ui" / "orazaka-cli" / "src" / "services" / "image-model-recipes.json"
         cli = {model["id"]: model for model in json.loads(recipes.read_text())["models"]}
         for name, spec in video_models.load_manifest()["image"].items():
+            if spec.get("workerOnly"):  # a model only this worker serves (flux-1-schnell): its licence is checked below
+                continue
             self.assertIn(name, cli)
             ours = {(f["path"], f["sha256"], f["bytes"]) for f in spec["files"]}
             theirs = {(f["path"], f["sha256"], f["bytes"]) for f in cli[name]["files"]}
             self.assertEqual(theirs, ours, name)
+
+
+class TestTheImageModelsAreLicensedForTheSites(unittest.TestCase):
+    """orazaka#508: the renders land on public sites, so a profile's image model must allow commercial use."""
+
+    def test_a_profile_never_serves_a_non_commercial_image_model(self):
+        manifest = video_models.load_manifest()
+        for name, profile in manifest["profiles"].items():
+            if "image" in profile:
+                spec = manifest["image"][profile["image"]]
+                self.assertIn(spec["licence"], {"Apache-2.0", "MIT"}, f"{name}: {profile['image']}")
+                self.assertNotEqual(False, spec.get("commercial", True), name)
+
+    def test_flux_dev_is_not_listed(self):
+        """FLUX.1 [dev] is under the FLUX.1 [dev] Non-Commercial License: not for our public sites."""
+        self.assertFalse([n for n in video_models.load_manifest()["image"] if "dev" in n])
+
+    def test_every_image_file_is_pinned_by_size_and_checksum(self):
+        for name, spec in video_models.load_manifest()["image"].items():
+            for f in spec["files"]:
+                self.assertRegex(f["sha256"], r"^[0-9a-f]{64}$", name)
+                self.assertGreater(f["bytes"], 0, name)
+                self.assertTrue(f["url"].startswith("https://huggingface.co/"), name)
 
 
 class TestTheStudioOffersWhatTheCatalogueAndThisWorkerKnow(unittest.TestCase):
@@ -167,6 +192,23 @@ class TestSdServerLine(unittest.TestCase):
         self.assertIn("--diffusion-fa", line)
         self.assertNotIn("--offload-to-cpu", line)
         self.assertIn("--offload-to-cpu", sd_server.args("flux-2-klein-4b", Path("/m"), 8086, {"MEDIA_IMAGE_OFFLOAD": "true"}))
+
+    def test_the_flux_schnell_line(self):
+        from app import sd_server
+
+        line = sd_server.args("flux-1-schnell", Path("/models"), 8086, {})
+        for flag in ("--diffusion-model", "--clip_l", "--t5xxl", "--vae"):
+            self.assertIn(flag, line)
+        self.assertEqual("/models/sd/flux1-schnell/t5xxl_fp16.safetensors", line[line.index("--t5xxl") + 1])
+        self.assertEqual("4", line[line.index("--steps") + 1])
+        self.assertEqual("1.0", line[line.index("--cfg-scale") + 1])
+        self.assertEqual("euler", line[line.index("--sampling-method") + 1])
+
+    def test_the_render_profile_fetches_the_schnell_files(self):
+        from app import fetch_models
+
+        paths = {f["path"] for f in fetch_models.plan("render")["files"]}
+        self.assertIn("flux1-schnell/flux1-schnell-Q8_0.gguf", paths)
 
     def test_the_fetch_plan_borrows_the_text_encoder_instead_of_downloading_it_twice(self):
         from app import fetch_models
