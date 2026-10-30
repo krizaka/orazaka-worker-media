@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,10 +30,95 @@ class TestLoadModes(unittest.TestCase):
         modes = re.search(r'choices=\[([^\]]+)\], default="volume"', source).group(1)
         self.assertEqual(['"volume"', '"stage"', '"warm-stage"', '"prefetch"'], [m.strip() for m in modes.split(",")])
 
-    def test_the_heavy_imports_happen_before_the_clock(self):
-        source = Path(measure.__file__).read_text()
-        load = source[source.index("def measure_load"):source.index("def measure_render")]
-        self.assertLess(load.index("warm_imports()"), load.index("started = time.time()"))
+
+class FakeModel:
+    name = "fake"
+    pipeline = "wan"
+    text_encoder_from = None
+
+
+def run_load(mode, stage_dir, events, model=None, donor=None):
+    """measure_load with the GPU world replaced: records the order of resolve, stage, evict and load."""
+    from unittest import mock
+
+    model = model or FakeModel()
+    tmp = Path(tempfile.mkdtemp())
+    snapshot = tmp / "snap"
+    snapshot.mkdir()
+    (snapshot / "w.bin").write_bytes(b"x" * 10)
+    env = {"MEDIA_MODELS_STAGE_DIR": stage_dir} if stage_dir else {}
+    snapshots = {id(model): snapshot}
+    if donor:
+        snapshots[id(donor)] = tmp / "donor"
+        (tmp / "donor").mkdir()
+    fake_cache = mock.Mock()
+    fake_cache.stage.side_effect = lambda src, dst: events.append(("stage", src.name, dst.parent))
+    with mock.patch.dict(os.environ, env, clear=False), \
+            mock.patch.object(measure, "_resolve", lambda module, names: events.append(("resolve", module, names))), \
+            mock.patch.object(measure, "_snapshot", lambda m: snapshots[id(m)]), \
+            mock.patch.object(measure, "evict", lambda path: events.append(("evict", Path(path).name)) or 0), \
+            mock.patch("app.video_models.find", lambda name, *a: donor if donor and name == "donor" else model), \
+            mock.patch("app.model_cache.stage", fake_cache.stage), \
+            mock.patch("app.wan_generator._load", lambda m, from_image=False: events.append(("load",))):
+        if not stage_dir:
+            os.environ.pop("MEDIA_MODELS_STAGE_DIR", None)
+        line = measure.measure_load("fake", mode)
+        return json.loads(line), os.environ.get("MEDIA_MODELS_STAGE_DIR")
+
+
+class TestLoadBehaviour(unittest.TestCase):
+    def test_the_classes_the_loader_resolves_are_resolved_before_the_clock(self):
+        events = []
+        run_load("volume", None, events)
+        self.assertIn(("resolve", "diffusers", ("AutoencoderKLWan", "WanImageToVideoPipeline", "WanPipeline")), events)
+        self.assertLess(max(i for i, e in enumerate(events) if e[0] == "resolve"), events.index(("load",)))
+
+    def test_the_text_encoder_class_is_resolved_when_a_donor_is_configured(self):
+        model = FakeModel()
+        model.text_encoder_from = "donor"
+        events = []
+        run_load("volume", None, events, model=model, donor=FakeModel())
+        self.assertIn(("resolve", "transformers", ("UMT5EncoderModel",)), events)
+
+    def test_ltx_resolves_its_own_pipeline_class(self):
+        model = FakeModel()
+        model.pipeline = "ltx"
+        events = []
+        run_load("volume", None, events, model=model)
+        self.assertIn(("resolve", "diffusers", ("LTXConditionPipeline",)), events)
+        self.assertNotIn(("resolve", "diffusers", ("AutoencoderKLWan", "WanImageToVideoPipeline", "WanPipeline")), events)
+
+    def test_warm_stage_completes_the_copy_before_the_timer_and_keeps_staging_on(self):
+        events = []
+        _, stage_dir = run_load("warm-stage", "/nvme", events)
+        self.assertEqual("/nvme", stage_dir)
+        self.assertEqual(("stage", "snap", Path("/nvme")), next(e for e in events if e[0] == "stage"))
+        self.assertLess(next(i for i, e in enumerate(events) if e[0] == "stage"), events.index(("load",)))
+
+    def test_warm_stage_stages_the_donor_too(self):
+        model = FakeModel()
+        model.text_encoder_from = "donor"
+        events = []
+        run_load("warm-stage", "/nvme", events, model=model, donor=FakeModel())
+        self.assertEqual(["snap", "donor"], [e[1] for e in events if e[0] == "stage"])
+
+    def test_stage_starts_from_no_copy_and_prepares_nothing(self):
+        events = []
+        stage_dir = tempfile.mkdtemp()
+        (Path(stage_dir) / "snap").mkdir()
+        run_load("stage", stage_dir, events)
+        self.assertFalse((Path(stage_dir) / "snap").exists())
+        self.assertEqual([], [e for e in events if e[0] == "stage"])
+
+    def test_both_staged_modes_refuse_a_missing_stage_directory(self):
+        for mode in ("stage", "warm-stage"):
+            with self.assertRaises(SystemExit) as refused:
+                run_load(mode, None, [])
+            self.assertIn("MEDIA_MODELS_STAGE_DIR", str(refused.exception))
+
+    def test_volume_drops_the_stage_directory(self):
+        _, stage_dir = run_load("volume", "/nvme", [])
+        self.assertIsNone(stage_dir)
 
 
 class FakeTransformer:

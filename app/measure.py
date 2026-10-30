@@ -81,21 +81,58 @@ def _snapshot(model):
     return model_cache.local_snapshot(model.repo, model.revision, hub_cache(model))
 
 
-def warm_imports() -> None:
-    """Imports the heavy libraries before any clock starts: on a pod the venv lives on the network volume, and the first import of
-    torch, diffusers and transformers took ~30 s of the first measurement, which is not the weights' load."""
-    import diffusers  # noqa: F401, PLC0415
-    import torch  # noqa: F401, PLC0415
-    import transformers  # noqa: F401, PLC0415
+def _resolve(module: str, names: tuple[str, ...]) -> None:
+    """Resolves the concrete classes of a lazy module (diffusers, transformers import their implementation on first access)."""
+    import importlib  # noqa: PLC0415
+
+    loaded = importlib.import_module(module)
+    for name in names:
+        getattr(loaded, name)
+
+
+def warm_imports(model=None) -> None:
+    """Imports the heavy libraries, and the exact classes the model's loader resolves, before any clock starts: on a pod the venv
+    lives on the network volume, and the first import of torch, diffusers and transformers (then of the pipeline classes behind
+    their lazy imports) took ~30 s of the first measurement, which is not the weights' load. No weights are loaded here."""
+    for module in ("torch", "diffusers", "transformers"):
+        _resolve(module, ())
+    if model is None:
+        return
+    if getattr(model, "pipeline", None) == "ltx":
+        _resolve("diffusers", ("LTXConditionPipeline",))
+        return
+    _resolve("diffusers", ("AutoencoderKLWan", "WanImageToVideoPipeline", "WanPipeline"))
+    if getattr(model, "text_encoder_from", None):
+        _resolve("transformers", ("UMT5EncoderModel",))
+
+
+def _snapshots_to_stage(model) -> list:
+    """The model's snapshot, and its text-encoder donor's when the loader stages that too."""
+    from app.video_models import find  # noqa: PLC0415
+
+    models = [model]
+    if getattr(model, "text_encoder_from", None):
+        models.append(find(model.text_encoder_from))
+    return [_snapshot(m) for m in models]
+
+
+def prepare_stage(model, stage_dir: str) -> None:
+    """``warm-stage``: the NVMe copy is made complete BEFORE the clock, so the timed load reads an existing copy.
+
+    A failure stops the measurement (``model_cache.stage`` raises; the loader's own ``resolve`` would fall back silently)."""
+    from app import model_cache  # noqa: PLC0415
+
+    for snapshot in _snapshots_to_stage(model):
+        model_cache.stage(snapshot, Path(stage_dir) / snapshot.name)
 
 
 def measure_load(model_name: str, mode: str) -> str:
     from app import wan_generator  # noqa: PLC0415
     from app.video_models import find  # noqa: PLC0415
 
-    warm_imports()
-
     model = find(model_name)
+    warm_imports(model)
+
     snapshot = _snapshot(model)
     size = sum(p.stat().st_size for p in snapshot.rglob("*") if p.is_file())
     stage_dir = os.environ.get("MEDIA_MODELS_STAGE_DIR")
@@ -105,11 +142,14 @@ def measure_load(model_name: str, mode: str) -> str:
             raise SystemExit(f"--mode {mode} needs MEDIA_MODELS_STAGE_DIR")
         if mode == "stage":  # a fresh pod: the copy from the volume is part of the load
             shutil.rmtree(Path(stage_dir) / snapshot.name, ignore_errors=True)
+        else:  # a pod that has served this model before: the copy is there, complete, before the timer
+            prepare_stage(model, stage_dir)
     elif mode == "prefetch":
         os.environ["MEDIA_MODELS_PREFETCH"] = "1"
         os.environ.pop("MEDIA_MODELS_STAGE_DIR", None)
     else:
         os.environ.pop("MEDIA_MODELS_STAGE_DIR", None)
+        stage_dir = None
     evict(snapshot)
     if stage_dir:
         evict(Path(stage_dir))
