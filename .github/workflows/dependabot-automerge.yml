@@ -14,4 +14,4 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    uses: krizaka/.github/.github/workflows/dependabot-automerge.yml@58d71a2cacfa1563a74aab117bc6a1db75821b87 # main
+    uses: krizaka/.github/.github/workflows/dependabot-automerge.yml@1002810b78ccc24e284ec8209e8e0b55ff06ea33 # main
