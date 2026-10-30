@@ -1171,5 +1171,41 @@ class AssetIdResolutionTest(unittest.TestCase):
                 self.assertTrue(os.path.isfile(path), path)
 
 
+class TestEncoderConfinesItsOutput(unittest.TestCase):
+    """The encoder checks its own output path (CodeQL py/command-line-injection): it never trusts its caller."""
+
+    def _frames(self):
+        return [Image.new("RGB", (8, 8))]
+
+    def test_refuses_a_path_outside_the_allowed_roots(self):
+        from app import encoder
+        for bad in ("/etc/orazaka-evil.mp4", "/root/x.mp4", os.path.join(tempfile.gettempdir(), "..", "..", "etc", "x.mp4")):
+            with patch.object(encoder.subprocess, "run") as run:
+                with self.assertRaises(PermissionError, msg=bad):
+                    encoder.export_frames_to_video(self._frames(), bad)
+                run.assert_not_called()
+
+    def test_refuses_a_leading_hyphen_name(self):
+        from app import encoder
+        with patch.object(encoder.subprocess, "run") as run:
+            with self.assertRaises(ValueError):
+                encoder.export_frames_to_video(self._frames(), os.path.join(tempfile.gettempdir(), "-y.mp4"))
+            run.assert_not_called()
+
+    def test_ffmpeg_receives_an_absolute_output_path(self):
+        from app import encoder
+        out = os.path.join(tempfile.gettempdir(), "orazaka-enc-ok.mp4")
+        with patch.object(encoder.subprocess, "run") as run:
+            encoder.export_frames_to_video(self._frames(), out)
+        self.assertTrue(os.path.isabs(run.call_args[0][0][-1]))
+
+    def test_no_subprocess_in_the_worker_uses_a_shell(self):
+        import glob
+        import re
+        for path in glob.glob(os.path.join(os.path.dirname(__file__), "app", "*.py")):
+            with open(path, encoding="utf-8") as source:
+                self.assertIsNone(re.search(r"shell\s*=\s*True|os\.system\(", source.read()), path)
+
+
 if __name__ == "__main__":
     unittest.main()

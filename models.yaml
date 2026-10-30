@@ -252,6 +252,44 @@ image:
         sha256: ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04
     launch: { steps: 4, cfgScale: 1.0, width: 1024, height: 1024, flags: ["--diffusion-fa"] }
 
+  # FLUX.1 [schnell] (Black Forest Labs) — the still for the public sites' renders (orazaka#508). Apache-2.0 weights,
+  # commercial use allowed, 4 steps without guidance. Chosen over FLUX.1 [dev] on purpose: the [dev] weights are under the
+  # FLUX.1 [dev] Non-Commercial License, and our renders end up on krizaka.com and the products' sites, so [dev] is neither
+  # listed nor fetched here (model card: huggingface.co/black-forest-labs/FLUX.1-schnell). Q8_0 GGUF of city96 (Apache-2.0)
+  # for the diffusion model, the checkpoint's own VAE, the Apache-2.0 CLIP-L and T5-XXL (fp16) of comfyanonymous. The VAE is read
+  # from the ungated mirror (same sha256 as the gated black-forest-labs/FLUX.1-schnell/ae.safetensors: the file is checked, not the host).
+  # ~23 GB on disk, ~16 GB of VRAM: a 24 GB card (RTX 4090 / A5000) runs it without offload.
+  flux-1-schnell:
+    label: "FLUX.1 [schnell] (Q8_0)"
+    licence: Apache-2.0
+    licenceUrl: https://huggingface.co/black-forest-labs/FLUX.1-schnell
+    commercial: true
+    workerOnly: true        # not in the Mac CLI's recipe list (the Mac runs FLUX.2 klein); the CLI-recipe test skips it
+    vramGb: 16
+    downloadGb: 23.2
+    files:
+      - role: diffusion-model
+        path: flux1-schnell/flux1-schnell-Q8_0.gguf
+        url: https://huggingface.co/city96/FLUX.1-schnell-gguf/resolve/f495746ed9c5efcf4661f53ef05401dceadc17d2/flux1-schnell-Q8_0.gguf
+        bytes: 12687821728
+        sha256: f6694941193b10148dbf1f0f498d4ccd3e9875c127fc53946213b68580c66f10
+      - role: clip_l
+        path: flux1-schnell/clip_l.safetensors
+        url: https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors
+        bytes: 246144152
+        sha256: 660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd
+      - role: t5xxl
+        path: flux1-schnell/t5xxl_fp16.safetensors
+        url: https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors
+        bytes: 9787841024
+        sha256: 6e480b09fae049a72d2a8c5fbccb8d3e92febeb233bbe9dfe7256958a9167635
+      - role: vae
+        path: flux1-schnell/ae.safetensors
+        url: https://huggingface.co/camenduru/FLUX.1-dev-ungated/resolve/main/ae.safetensors
+        bytes: 335304388
+        sha256: afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38
+    launch: { steps: 4, cfgScale: 1.0, width: 1024, height: 1024, flags: ["--diffusion-fa", "--sampling-method", "euler"] }
+
 # Sound for a video (orazaka-packs#25, app/sound.py + app/sound_generators.py). Two kinds of model make the
 # tracks; the mix, the -14 LUFS pass and the AAC mux are ffmpeg and need none. The voice-over is a speech
 # asset (the Piper voices of the catalogue), never a model of this file.
@@ -280,6 +318,7 @@ sound:
 
   # Video-to-audio foley, synchronised to the picture. MMAudio's code is MIT but its WEIGHTS are CC-BY-NC 4.0:
   # evaluation and non-commercial use only. Never a default; a job must ask for it by name.
+  # Refused unless the deployment sets MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS=true (a developer machine); off in production.
   mmaudio-large-44k-v2:
     kind: foley
     label: "MMAudio large 44k v2 (video-to-audio foley) — non-commercial"
@@ -341,3 +380,8 @@ profiles:
     video: [wan2.2-ti2v-5b, wan2.1-t2v-1.3b]
     defaultVideo: wan2.1-t2v-1.3b
     image: flux-2-klein-4b
+  # Stills for the public sites (orazaka#508): FLUX.1 [schnell], Apache-2.0, on one 24 GB card, no video model.
+  render:
+    video: [wan2.1-t2v-1.3b]
+    defaultVideo: wan2.1-t2v-1.3b
+    image: flux-1-schnell

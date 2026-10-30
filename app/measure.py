@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -168,14 +169,15 @@ def main(argv: list[str]) -> int:
     render.add_argument("model")
     render.add_argument("--steps", type=int, default=20)
     render.add_argument("--seed", type=int, default=7)
-    render.add_argument("--out", type=Path, default=Path("/tmp/measure"))  # noqa: S108
+    render.add_argument("--out", type=Path, default=None, help="output directory (default: a fresh private temp directory)")
     render.add_argument("--accel", default="none", help="none | fp8 | firstblock | fp8+firstblock")
     render.add_argument("--threshold", type=float, default=0.2, help="FirstBlockCache threshold")
     args = parser.parse_args(argv)
     if args.what == "load":
         line = measure_load(args.model, args.mode)
     else:
-        line = measure_render(args.model, args.steps, args.seed, args.out, parse_accel(args.accel), args.threshold)
+        out = args.out or Path(tempfile.mkdtemp(prefix="measure-"))
+        line = measure_render(args.model, args.steps, args.seed, out, parse_accel(args.accel), args.threshold)
     print(line, flush=True)
     return 0
 

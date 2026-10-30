@@ -54,10 +54,10 @@ def reserve(cost_usd: float, env: dict | None = None, now: dt.datetime | None = 
     with _lock:
         state = _load(path, day)
         if max_runs >= 0 and state["runs"] + 1 > max_runs:
-            log.error("SPEND ALERT: %s paid video clips today, the daily limit (%s) is reached", state["runs"], max_runs)
+            log.error("SPEND ALERT: %d paid video clips today, the daily limit (%d) is reached", int(state["runs"]), max_runs)
             raise SpendRefused(f"the daily limit of {max_runs} video clips is reached; it resets at 00:00 UTC")
         if budget >= 0 and state["usd"] + cost_usd > budget:
-            log.error("SPEND ALERT: %.2f USD spent today, the daily budget (%.2f) is reached", state["usd"], budget)
+            log.error("SPEND ALERT: %.2f USD spent today, the daily budget (%.2f) is reached", float(state["usd"]), budget)
             raise SpendRefused(f"the daily budget of {budget:.2f} USD for paid providers is reached; it resets at 00:00 UTC")
         state["runs"] += 1
         state["usd"] = round(state["usd"] + cost_usd, 4)
