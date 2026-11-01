@@ -36,11 +36,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-venv ffmpeg ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 ENV VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH
+# Every wheel (pip, torch from PyTorch's cu128 index, and the rest) is pinned with its hash: requirements-cuda.lock
+# (regenerate with the command in requirements-cuda.in). pip then refuses anything the lock does not name.
+COPY requirements-cuda.lock /tmp/requirements-cuda.lock
 RUN python3 -m venv /opt/venv \
- && pip install --no-cache-dir --only-binary :all: pip==26.1.1 \
- && pip install --no-cache-dir --only-binary :all: torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
-COPY requirements-cuda.txt /tmp/requirements-cuda.txt
-RUN pip install --no-cache-dir --only-binary :all: -r /tmp/requirements-cuda.txt
+ && /opt/venv/bin/python -m pip install --no-cache-dir --require-hashes --only-binary :all: -r /tmp/requirements-cuda.lock
 COPY --from=sdcpp /sd-server /usr/local/bin/sd-server
 
 WORKDIR /app

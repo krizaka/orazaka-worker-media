@@ -17,3 +17,17 @@ def test_every_from_is_pinned_by_digest():
     assert froms, "the Dockerfile has base images"
     for image in froms:
         assert re.search(r"@sha256:[0-9a-f]{64}$", image), f"{image} is not pinned by digest"
+
+
+def test_every_pip_install_requires_hashes_and_the_lock_hashes_every_pin():
+    """Sonar S8544: pip installs only from the hash-locked file, and each pin in it carries a hash."""
+    root = Path(__file__).parent
+    installs = [l for l in (root / "Dockerfile.cuda").read_text().splitlines() if "pip install" in l]
+    assert installs, "the Dockerfile installs Python packages"
+    for line in installs:
+        assert "--require-hashes" in line, f"pip install without --require-hashes: {line.strip()}"
+    lock = (root / "requirements-cuda.lock").read_text()
+    entries = re.findall(r"^([A-Za-z0-9_.\-]+==\S+) \\\n((?:\s+--hash=sha256:[0-9a-f]{64}(?: \\)?\n)+)", lock, re.M)
+    pins = re.findall(r"^[A-Za-z0-9_.\-]+==\S+ \\$", lock, re.M)
+    assert pins and len(entries) == len(pins), "a pin of the lock has no sha256 hash"
+    assert "torch==2.11.0+cu128" in lock and "pip==26.1.1" in lock
