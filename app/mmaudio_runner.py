@@ -4,6 +4,7 @@ Standalone on purpose: MMAudio (github.com/hkchengrex/MMAudio) pins its own torc
 ``~/.orazaka/sound/venv`` and this file imports nothing from the worker. The code is MIT; the WEIGHTS it
 downloads are CC-BY-NC 4.0 — non-commercial (``models.yaml``, ``sound:``). Adapted from MMAudio's demo.py.
 """
+
 import argparse
 import logging
 import sys
@@ -43,18 +44,30 @@ def main() -> None:
     rng = torch.Generator(device=device)
     rng.manual_seed(args.seed)
     flow = FlowMatching(min_sigma=0, inference_mode="euler", num_steps=args.steps)
-    features = FeaturesUtils(tod_vae_ckpt=config.vae_path, synchformer_ckpt=config.synchformer_ckpt,
-                             enable_conditions=True, mode=config.mode,
-                             bigvgan_vocoder_ckpt=config.bigvgan_16k_path, need_vae_encoder=False)
+    features = FeaturesUtils(
+        tod_vae_ckpt=config.vae_path,
+        synchformer_ckpt=config.synchformer_ckpt,
+        enable_conditions=True,
+        mode=config.mode,
+        bigvgan_vocoder_ckpt=config.bigvgan_16k_path,
+        need_vae_encoder=False,
+    )
     features = features.to(device, dtype).eval()
 
     info = load_video(args.video.expanduser(), args.duration)
     config.seq_cfg.duration = info.duration_sec
-    net.update_seq_lengths(config.seq_cfg.latent_seq_len, config.seq_cfg.clip_seq_len,
-                           config.seq_cfg.sync_seq_len)
-    audios = generate(info.clip_frames.unsqueeze(0), info.sync_frames.unsqueeze(0), [args.prompt],
-                      negative_text=[args.negative], feature_utils=features, net=net, fm=flow, rng=rng,
-                      cfg_strength=args.cfg)
+    net.update_seq_lengths(config.seq_cfg.latent_seq_len, config.seq_cfg.clip_seq_len, config.seq_cfg.sync_seq_len)
+    audios = generate(
+        info.clip_frames.unsqueeze(0),
+        info.sync_frames.unsqueeze(0),
+        [args.prompt],
+        negative_text=[args.negative],
+        feature_utils=features,
+        net=net,
+        fm=flow,
+        rng=rng,
+        cfg_strength=args.cfg,
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     torchaudio.save(args.out, audios.float().cpu()[0], config.seq_cfg.sampling_rate)
 

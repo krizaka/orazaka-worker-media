@@ -1,4 +1,5 @@
 """Every base image of the Dockerfile is pinned by digest (OpenSSF Scorecard, Pinned-Dependencies)."""
+
 import re
 from pathlib import Path
 

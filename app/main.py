@@ -96,7 +96,7 @@ def preflight_memory_guard(model_name: str) -> None:
         print("[mem-guard] psutil unavailable — skipping preflight.", flush=True)
         return
     vm = psutil.virtual_memory()
-    avail_gb = vm.available / (1024 ** 3)
+    avail_gb = vm.available / (1024**3)
     # Optional: also bail under acute memory pressure (>92% used).
     if vm.percent >= 92.0:
         raise RuntimeError(
@@ -178,10 +178,10 @@ def validate_safe_path(path: str) -> str:
                 break
         except ValueError:
             continue
-            
+
     if not is_safe:
         raise PermissionError(f"Access to path '{path}' is denied (outside allowed directories).")
-        
+
     return resolved_path
 
 
@@ -212,6 +212,7 @@ def _asked_for_an_image(payload: Dict[str, Any]) -> bool:
 
 def _focus(payload: Dict[str, Any]) -> tuple:
     """Where the subject is in the photo, ``(x, y)`` in 0..1 (``focusX``/``focusY``), centre by default."""
+
     def one(key: str) -> float:
         try:
             return min(1.0, max(0.0, float(payload.get(key))))
@@ -272,9 +273,7 @@ def _generate_flux_image(
         return [pil_image.copy() for _ in range(num_frames)]
 
     except ImportError as exc:
-        raise RuntimeError(
-            "mflux is not installed. Cannot generate FLUX image without the dependency."
-        ) from exc
+        raise RuntimeError("mflux is not installed. Cannot generate FLUX image without the dependency.") from exc
     except Exception as e:
         raise RuntimeError(f"FLUX inference failed: {e}") from e
 
@@ -368,7 +367,9 @@ def _write_inside_uploads(path: str, data: bytes) -> str:
     raise PermissionError(f"Access to path '{path}' is denied (outside the upload directory).")
 
 
-def run_remote(payload: Dict[str, Any], model_name: str, process=None, generate=remote_video.generate) -> Dict[str, Any]:
+def run_remote(
+    payload: Dict[str, Any], model_name: str, process=None, generate=remote_video.generate
+) -> Dict[str, Any]:
     """One clip from a provider-served model, as the response body of the pipeline.
 
     The shape is what Wan on a GPU gives (aspect → size, seed, metering, provenance); only the pixels come
@@ -434,42 +435,42 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
         self.wfile.write(content)
 
     def do_GET(self) -> None:
-        if self.path == '/':
+        if self.path == "/":
             self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "running"}).encode('utf-8'))
+            self.wfile.write(json.dumps({"status": "running"}).encode("utf-8"))
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_POST(self) -> None:
-        if self.path != '/v1/videos/generations':
+        if self.path != "/v1/videos/generations":
             self.send_response(404)
             self.end_headers()
             return
 
-        content_length = int(self.headers.get('Content-Length', 0))
+        content_length = int(self.headers.get("Content-Length", 0))
         try:
-            payload: Dict[str, Any] = json.loads(self.rfile.read(content_length).decode('utf-8'))
+            payload: Dict[str, Any] = json.loads(self.rfile.read(content_length).decode("utf-8"))
         except Exception:
             payload = {}
 
         model_name = payload.get("model") or video_models.default_model_name()
         if model_name not in MODEL_REGISTRY:
             self.send_response(400)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"error": f"Model '{model_name}' is not registered."}).encode('utf-8'))
+            self.wfile.write(json.dumps({"error": f"Model '{model_name}' is not registered."}).encode("utf-8"))
             return
 
         try:
             upscale.requested(payload)  # a value nobody can make is refused before a GPU second is spent
         except video_models.InvalidVideoRequest as bad:
             self.send_response(400)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(bad)}).encode('utf-8'))
+            self.wfile.write(json.dumps({"error": str(bad)}).encode("utf-8"))
             return
 
         process = psutil.Process(os.getpid()) if psutil else None
@@ -488,12 +489,13 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
 
                 if seed_val == -1:
                     import random
+
                     seed_val = random.randint(0, 2147483647)  # noqa: S311 — a generation seed, not a secret
 
                 print(f"Using video generation seed: {seed_val}", flush=True)
                 generator = torch.manual_seed(seed_val) if torch else None
                 job_id = payload.get("job_id")
-                
+
                 model_name = payload.get("model") or video_models.default_model_name()
                 family = MODEL_REGISTRY[model_name]
 
@@ -590,9 +592,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                 if shaped is None and payload.get("aspect"):
                     shaped = video_models.video_models().get(model_name)
                 if shaped is not None:
-                    req_width, req_height = shaped.size_for(
-                        payload.get("aspect"), req_width, req_height
-                    )
+                    req_width, req_height = shaped.size_for(payload.get("aspect"), req_width, req_height)
                 if wan is not None:
                     frames_n = wan.frames_for(duration)
                     if explicit_frames and int(explicit_frames) > 0:
@@ -647,7 +647,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                         num_frames=frames_n,
                         num_inference_steps=steps,
                         generator=generator,
-                        progress_callback=progress_cb
+                        progress_callback=progress_cb,
                     )
 
                 _record_consumption(metrics, frames, steps, fps_render, req_width, req_height)
@@ -680,38 +680,39 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
                     finally:
                         if os.path.exists(tmp_path):
                             os.remove(tmp_path)
-                    
-                    base64_video = base64.b64encode(video_bytes).decode('utf-8')
+
+                    base64_video = base64.b64encode(video_bytes).decode("utf-8")
                     if job_id:
                         send_progress_update(job_id, 100)
                     response_data = {"data": [{"b64_json": base64_video}], "metrics": metrics}
 
             body = json.dumps(response_data)
             self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(body)))
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body.encode('utf-8'))
+            self.wfile.write(body.encode("utf-8"))
         except job_control.JobCancelled as stopped:
             print(f"Video generation stopped: {stopped}", flush=True)
             self.send_response(CANCELLED_STATUS)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(stopped)}).encode('utf-8'))
+            self.wfile.write(json.dumps({"error": str(stopped)}).encode("utf-8"))
         except video_models.InvalidVideoRequest as bad:
             print(f"Refused video request: {bad}", flush=True)
             self.send_response(400)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(bad)}).encode('utf-8'))
+            self.wfile.write(json.dumps({"error": str(bad)}).encode("utf-8"))
         except Exception as e:
             print(f"Error during video generation: {e}", flush=True)
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(str(e).encode('utf-8'))
+            self.wfile.write(str(e).encode("utf-8"))
+
 
 def run(port: int = 8188) -> None:
-    server_address = ('', port)
+    server_address = ("", port)
     httpd = HTTPServer(server_address, VideoInferenceHandler)
     print(f"Video Worker listening on port {port}...", flush=True)
     try:
@@ -721,7 +722,8 @@ def run(port: int = 8188) -> None:
     finally:
         httpd.server_close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     port_arg = 8188
     if len(sys.argv) > 1:
         port_arg = int(sys.argv[1])

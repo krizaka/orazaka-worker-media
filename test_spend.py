@@ -1,4 +1,5 @@
 """The daily ceilings on the paid video provider: clips per day and USD per day, refused before any call."""
+
 from __future__ import annotations
 
 import datetime as dt

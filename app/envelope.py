@@ -53,9 +53,7 @@ class MasterKeyring:
             )
         mode = os.stat(path).st_mode & 0o077
         if mode:
-            raise EnvelopeError(
-                f"the master keyring at {path} is readable beyond its owner; run: chmod 600 {path}"
-            )
+            raise EnvelopeError(f"the master keyring at {path} is readable beyond its owner; run: chmod 600 {path}")
         with open(path, encoding="utf-8") as handle:
             for raw in handle:
                 line = raw.strip()
@@ -77,41 +75,38 @@ class MasterKeyring:
         """Wraps a data key under the active master key. Returns ``(key_id, blob)``."""
         nonce = os.urandom(WRAP_NONCE_LENGTH)
         # The key id is authenticated with the key, so a header that renames it fails to unwrap.
-        sealed = AESGCM(self.keys[self.active]).encrypt(
-            nonce, data_key, self.active.encode("utf-8")
-        )
+        sealed = AESGCM(self.keys[self.active]).encrypt(nonce, data_key, self.active.encode("utf-8"))
         return self.active, nonce + sealed
 
     def unwrap(self, key_id: str, wrapped: bytes) -> bytes:
         """Unwraps a data key, or refuses. Never falls back to treating the file as plaintext."""
         master = self.keys.get(key_id)
         if master is None:
-            raise EnvelopeError(
-                f"this deployment holds no master key '{key_id}'; the asset cannot be opened here"
-            )
+            raise EnvelopeError(f"this deployment holds no master key '{key_id}'; the asset cannot be opened here")
         try:
             return AESGCM(master).decrypt(
                 wrapped[:WRAP_NONCE_LENGTH], wrapped[WRAP_NONCE_LENGTH:], key_id.encode("utf-8")
             )
         except Exception as failure:
-            raise EnvelopeError(
-                f"the wrapped data key did not authenticate under master key '{key_id}'"
-            ) from failure
+            raise EnvelopeError(f"the wrapped data key did not authenticate under master key '{key_id}'") from failure
 
 
-def build_header(block_size: int, plain_length: int, key_id: str, wrapped: bytes,
-                 nonce_prefix: bytes) -> bytes:
+def build_header(block_size: int, plain_length: int, key_id: str, wrapped: bytes, nonce_prefix: bytes) -> bytes:
     """The header bytes, which are also the AAD prefix every block is bound to."""
     key_id_bytes = key_id.encode("utf-8")
-    return b"".join([
-        MAGIC,
-        struct.pack(">BB", VERSION, ALG_AES_256_GCM),
-        struct.pack(">I", block_size),
-        struct.pack(">Q", plain_length),
-        struct.pack(">H", len(key_id_bytes)), key_id_bytes,
-        struct.pack(">H", len(wrapped)), wrapped,
-        nonce_prefix,
-    ])
+    return b"".join(
+        [
+            MAGIC,
+            struct.pack(">BB", VERSION, ALG_AES_256_GCM),
+            struct.pack(">I", block_size),
+            struct.pack(">Q", plain_length),
+            struct.pack(">H", len(key_id_bytes)),
+            key_id_bytes,
+            struct.pack(">H", len(wrapped)),
+            wrapped,
+            nonce_prefix,
+        ]
+    )
 
 
 def parse_header(blob: bytes) -> dict:
@@ -127,15 +122,24 @@ def parse_header(blob: bytes) -> dict:
     plain_length = struct.unpack(">Q", blob[14:22])[0]
     key_id_length = struct.unpack(">H", blob[22:24])[0]
     at = 24
-    key_id = blob[at:at + key_id_length].decode("utf-8"); at += key_id_length
-    wrapped_length = struct.unpack(">H", blob[at:at + 2])[0]; at += 2
-    wrapped = blob[at:at + wrapped_length]; at += wrapped_length
-    nonce_prefix = blob[at:at + NONCE_PREFIX_LENGTH]; at += NONCE_PREFIX_LENGTH
+    key_id = blob[at : at + key_id_length].decode("utf-8")
+    at += key_id_length
+    wrapped_length = struct.unpack(">H", blob[at : at + 2])[0]
+    at += 2
+    wrapped = blob[at : at + wrapped_length]
+    at += wrapped_length
+    nonce_prefix = blob[at : at + NONCE_PREFIX_LENGTH]
+    at += NONCE_PREFIX_LENGTH
     if len(nonce_prefix) < NONCE_PREFIX_LENGTH:
         raise EnvelopeError("truncated envelope header")
     return {
-        "version": version, "blockSize": block_size, "plainLength": plain_length,
-        "keyId": key_id, "wrapped": wrapped, "noncePrefix": nonce_prefix, "headerLength": at,
+        "version": version,
+        "blockSize": block_size,
+        "plainLength": plain_length,
+        "keyId": key_id,
+        "wrapped": wrapped,
+        "noncePrefix": nonce_prefix,
+        "headerLength": at,
     }
 
 
@@ -156,8 +160,7 @@ def is_encrypted(path: str) -> bool:
         return False
 
 
-def encrypt_file(source: str, target: str, keyring: MasterKeyring,
-                 block_size: int = DEFAULT_BLOCK_SIZE) -> None:
+def encrypt_file(source: str, target: str, keyring: MasterKeyring, block_size: int = DEFAULT_BLOCK_SIZE) -> None:
     """Seals ``source`` into ``target``, atomically.
 
     Written to a sibling temp and moved into place, so a process killed mid-write leaves the
@@ -190,8 +193,7 @@ def encrypt_file(source: str, target: str, keyring: MasterKeyring,
             os.remove(temp)
 
 
-def encrypt_in_place(path: str, keyring: MasterKeyring,
-                     block_size: int = DEFAULT_BLOCK_SIZE) -> bool:
+def encrypt_in_place(path: str, keyring: MasterKeyring, block_size: int = DEFAULT_BLOCK_SIZE) -> bool:
     """Seals a plaintext file where it lies. Returns whether it did anything.
 
     Idempotent by construction, which is what makes a migration resumable: run it again.
@@ -207,8 +209,9 @@ def decrypt_bytes(path: str, keyring: MasterKeyring, offset: int = 0) -> bytes:
     with open(path, "rb") as handle:
         blob = handle.read()
     header = parse_header(blob)
-    header_bytes = build_header(header["blockSize"], header["plainLength"],
-                                header["keyId"], header["wrapped"], header["noncePrefix"])
+    header_bytes = build_header(
+        header["blockSize"], header["plainLength"], header["keyId"], header["wrapped"], header["noncePrefix"]
+    )
     data_key = keyring.unwrap(header["keyId"], header["wrapped"])
     aesgcm = AESGCM(data_key)
 
@@ -221,10 +224,9 @@ def decrypt_bytes(path: str, keyring: MasterKeyring, offset: int = 0) -> bytes:
     for index in range(first, total):
         start = header["headerLength"] + index * sealed_size
         plain_here = min(block_size, header["plainLength"] - index * block_size)
-        sealed = blob[start:start + plain_here + TAG_LENGTH]
+        sealed = blob[start : start + plain_here + TAG_LENGTH]
         try:
-            out += aesgcm.decrypt(_nonce(header["noncePrefix"], index), sealed,
-                                  _aad(header_bytes, index))
+            out += aesgcm.decrypt(_nonce(header["noncePrefix"], index), sealed, _aad(header_bytes, index))
         except Exception as failure:
             raise EnvelopeError(f"block {index} did not authenticate") from failure
-    return bytes(out[offset - first * block_size:])
+    return bytes(out[offset - first * block_size :])

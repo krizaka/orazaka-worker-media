@@ -23,6 +23,7 @@ broker delivered under — which the dispatcher took from the capability's row �
 so a new capability bound to ``job.compose.*`` works here with no change, and a
 capability this worker was never bound to never arrives.
 """
+
 import functools
 import json
 import os
@@ -127,7 +128,7 @@ COMPOSE_PREFIX = "job.compose."
 # GPU droplet that drains `orazaka.jobs.video` never takes a sound job it cannot run. Told apart by the key.
 SOUND_QUEUE = "orazaka.jobs.sound"
 SOUND_PREFIX_BINDING = "job.sound."
-_SERIAL = threading.Lock()   # one job at a time on this host, whichever queue it came from
+_SERIAL = threading.Lock()  # one job at a time on this host, whichever queue it came from
 
 
 def sound_enabled(env: dict | None = None) -> bool:
@@ -491,13 +492,7 @@ def _compose(job: dict) -> tuple:
     # that actor's own files may answer (ADR-046). An id that resolves to nothing
     # is dropped here rather than passed on as a path that cannot exist, so the
     # failure names the missing asset instead of the composer's empty input.
-    resolved = [
-        path
-        for path in (
-            _resolve_owned_asset(upload_root, user_id, str(item)) for item in photos
-        )
-        if path
-    ]
+    resolved = [path for path in (_resolve_owned_asset(upload_root, user_id, str(item)) for item in photos) if path]
 
     audio = payload.get("audio") or None
     if audio:
@@ -590,7 +585,7 @@ def _resolve_owned_output(upload_root: str, user_id: str, reference: str, scratc
             return asset_sink.fetch(job_id, filename, user_id, scratch or tempfile.mkdtemp(prefix="orz-in-"))
         found = os.path.realpath(os.path.join(owner_root, job_id, "output", filename))
     elif reference.startswith("/uploads/"):
-        found = os.path.realpath(os.path.join(upload_root, reference[len("/uploads/"):]))
+        found = os.path.realpath(os.path.join(upload_root, reference[len("/uploads/") :]))
     else:
         return _resolve_owned_asset(upload_root, user_id, reference)
     if found.startswith(owner_root + os.sep) and os.path.isfile(found):
@@ -643,7 +638,8 @@ def _sound(job: dict) -> tuple:
         if foley_prompt and foley_model is None:
             raise InvalidJobPayload(
                 "no commercially licensed foley model is installed: ask for one by name with foleyModel "
-                "(a non-commercial model is refused unless MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS=true) or leave foley empty")
+                "(a non-commercial model is refused unless MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS=true) or leave foley empty"
+            )
 
         output_path, public_url = _output_paths(job["userId"], job["jobId"])
         stages = {}
@@ -652,15 +648,17 @@ def _sound(job: dict) -> tuple:
         if foley_model:
             started = time.time()
             wav = os.path.join(scratch, "foley.wav")
-            stages["foley"] = sound_generators.generate_foley(foley_model, readable, foley_prompt,
-                                                              sound.probe(readable)["durationSeconds"], wav, seed)
+            stages["foley"] = sound_generators.generate_foley(
+                foley_model, readable, foley_prompt, sound.probe(readable)["durationSeconds"], wav, seed
+            )
             tracks["foley"] = wav
             stages["foley"]["wallSeconds"] = round(time.time() - started, 1)
         if music_model:
             started = time.time()
             wav = os.path.join(scratch, "music.wav")
-            stages["music"] = sound_generators.generate_music(music_model, music_prompt,
-                                                              sound.probe(readable)["durationSeconds"] + 1, wav, seed)
+            stages["music"] = sound_generators.generate_music(
+                music_model, music_prompt, sound.probe(readable)["durationSeconds"] + 1, wav, seed
+            )
             tracks["music"] = wav
             stages["music"]["wallSeconds"] = round(time.time() - started, 1)
         if voice:
@@ -669,7 +667,9 @@ def _sound(job: dict) -> tuple:
             # The picture already carries its own sound (a cut's synthesized foley, ADR-080): it is the foley track
             # of the mix, under the music and the voice — never silently dropped.
             own = os.path.join(scratch, "own.wav")
-            sound._run(["ffmpeg", "-y", "-hide_banner", "-v", "error", "-i", readable, "-vn", "-ac", "2", "-ar", "48000", own])
+            sound._run(
+                ["ffmpeg", "-y", "-hide_banner", "-v", "error", "-i", readable, "-vn", "-ac", "2", "-ar", "48000", own]
+            )
             tracks["foley"] = own
             stages["foley"] = {"model": "picture's own sound"}
         started = time.time()
@@ -681,17 +681,20 @@ def _sound(job: dict) -> tuple:
 
         silent_path = measured.pop("silentPath")
         url = _store(output_path, job, "video.mp4", "video/mp4", public_url)
-        silent_url = _store(silent_path, job, "video.silent.mp4", "video/mp4",
-                            public_url.replace("video.mp4", "video.silent.mp4"))
+        silent_url = _store(
+            silent_path, job, "video.silent.mp4", "video/mp4", public_url.replace("video.mp4", "video.silent.mp4")
+        )
         metrics = {
-            "durationSeconds": measured["durationSeconds"], "width": measured["width"], "height": measured["height"],
-            "loudnessLufs": measured["loudnessLufs"], "tracks": measured["tracks"], "stages": stages,
+            "durationSeconds": measured["durationSeconds"],
+            "width": measured["width"],
+            "height": measured["height"],
+            "loudnessLufs": measured["loudnessLufs"],
+            "tracks": measured["tracks"],
+            "stages": stages,
             "models": {kind: stage["model"] for kind, stage in stages.items() if "model" in stage},
         }
         result = {"url": url, "assetId": url, "silentUrl": silent_url, "format": "mp4", "metrics": metrics}
         return result, extract_consumption(metrics)
-
-
 
 
 def _is_sound(routing_key: str) -> bool:
@@ -929,9 +932,7 @@ def run_consumer(retry_seconds: float = 5.0, consume=None, sleep=time.sleep) -> 
 
 
 if __name__ == "__main__":
-    http_thread = threading.Thread(
-        target=main.run, args=(_http_port(),), daemon=True, name="media-http"
-    )
+    http_thread = threading.Thread(target=main.run, args=(_http_port(),), daemon=True, name="media-http")
     http_thread.start()
     # Registration runs on its own daemon thread and never gates consumption: a worker that
     # cannot reach the job service still drains its queues (ADR-038).

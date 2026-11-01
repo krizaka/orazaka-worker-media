@@ -14,6 +14,7 @@ The edit decision list is checked here, once, at the edge: an edit this module c
 wrong, never made differently. Everything that decides a shape (the filter graph, the LUT, the timeline) is a pure
 function, tested without ffmpeg.
 """
+
 from __future__ import annotations
 
 import json
@@ -214,11 +215,25 @@ def parse_edit(raw, clip_count: int) -> Edit:
         transition = str(item.get("transition") or "cut")
         if transition not in TRANSITIONS:
             raise EditError(f"{where}.transition must be one of {', '.join(TRANSITIONS)}")
-        seconds = 0.0 if transition == "cut" else _number(
-            item.get("transitionSeconds", 0.4), f"{where}.transitionSeconds", 0.1, MAX_TRANSITION_SECONDS)
-        shots.append(Shot(clip=clip, start=start, end=end, speed=speed, ramp_at=ramp_at, ramp_speed=ramp_speed,
-                          zoom=_number(item.get("zoom", 1), f"{where}.zoom", 1, 1.5), transition=transition,
-                          transition_seconds=seconds, caption=_text(item.get("caption"), f"{where}.caption")))
+        seconds = (
+            0.0
+            if transition == "cut"
+            else _number(item.get("transitionSeconds", 0.4), f"{where}.transitionSeconds", 0.1, MAX_TRANSITION_SECONDS)
+        )
+        shots.append(
+            Shot(
+                clip=clip,
+                start=start,
+                end=end,
+                speed=speed,
+                ramp_at=ramp_at,
+                ramp_speed=ramp_speed,
+                zoom=_number(item.get("zoom", 1), f"{where}.zoom", 1, 1.5),
+                transition=transition,
+                transition_seconds=seconds,
+                caption=_text(item.get("caption"), f"{where}.caption"),
+            )
+        )
     # A transition is the handover INTO a shot; it must fit inside both shots it joins.
     for i, shot in enumerate(shots[1:], start=1):
         if shot.transition_seconds >= min(shot.seconds, shots[i - 1].seconds) / 2:
@@ -232,9 +247,14 @@ def parse_edit(raw, clip_count: int) -> Edit:
         if style not in TEXT_STYLES:
             raise EditError(f"title {i}.style must be one of {', '.join(TEXT_STYLES)}")
         start = _number(item.get("start", 0), f"title {i}.start", 0, MAX_SECONDS)
-        titles.append(Title(text=_text(item.get("text"), f"title {i}.text"), start=start,
-                            end=_number(item.get("end", start + 2), f"title {i}.end", start + 0.2, MAX_SECONDS),
-                            style=style))
+        titles.append(
+            Title(
+                text=_text(item.get("text"), f"title {i}.text"),
+                start=start,
+                end=_number(item.get("end", start + 2), f"title {i}.end", start + 0.2, MAX_SECONDS),
+                style=style,
+            )
+        )
     upscale = str(raw.get("upscale") or "none")
     if upscale not in UPSCALERS:
         raise EditError(f"upscale must be one of {', '.join(UPSCALERS)}")
@@ -244,11 +264,21 @@ def parse_edit(raw, clip_count: int) -> Edit:
     master = str(raw.get("master") or "1080p")
     if master not in MASTERS:
         raise EditError(f"master must be one of {', '.join(MASTERS)}")
-    edit = Edit(aspect=aspect, fps=fps, grade=grade, shots=tuple(shots), titles=tuple(titles),
-                label=_text(raw.get("label") or DEFAULT_LABEL, "label") or DEFAULT_LABEL,
-                interpolate=bool(raw.get("interpolate", True)), upscale=upscale, ambience=ambience,
-                sfx=bool(raw.get("sfx", False)), master=master, text=raw.get("text") is not False,
-                burn_label=raw.get("burnLabel") is True)
+    edit = Edit(
+        aspect=aspect,
+        fps=fps,
+        grade=grade,
+        shots=tuple(shots),
+        titles=tuple(titles),
+        label=_text(raw.get("label") or DEFAULT_LABEL, "label") or DEFAULT_LABEL,
+        interpolate=bool(raw.get("interpolate", True)),
+        upscale=upscale,
+        ambience=ambience,
+        sfx=bool(raw.get("sfx", False)),
+        master=master,
+        text=raw.get("text") is not False,
+        burn_label=raw.get("burnLabel") is True,
+    )
     if timeline(edit)[-1][1] > MAX_SECONDS:
         raise EditError(f"the cut is longer than {MAX_SECONDS:g} s")
     return edit
@@ -356,8 +386,11 @@ def text_filters(edit: Edit, spans: list[tuple[float, float]], font: str, scratc
             n += 1
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write(line)
-            look = (f":box=1:boxcolor=black@0.55:boxborderw={max(6, size // 4)}" if spec["box"]
-                    else f":borderw={spec['border']}:bordercolor=black@0.85")
+            look = (
+                f":box=1:boxcolor=black@0.55:boxborderw={max(6, size // 4)}"
+                if spec["box"]
+                else f":borderw={spec['border']}:bordercolor=black@0.85"
+            )
             filters.append(
                 f"drawtext=fontfile='{font}':textfile='{path}':fontcolor=white:fontsize={size}"
                 f":x=(w-text_w)/2:y={top + k * int(size * 1.25)}{look}"
@@ -427,8 +460,9 @@ def grade_cube(name: str, points: int = 17) -> str:
 
 def missing_filters() -> list[str]:
     """The filters this host's ffmpeg lacks for a cut (Homebrew's default build has no ``drawtext``)."""
-    listed = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, check=False).stdout
+    listed = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-filters"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
+    ).stdout
     return [name for name in ("drawtext", "xfade", "lut3d", "minterpolate") if f" {name} " not in listed]
 
 
@@ -450,11 +484,15 @@ def sfx_events(edit: Edit, spans: list[tuple[float, float]]) -> list[tuple[str, 
 
 #: The synthesized hits: a filtered noise swell (whoosh) and a sub-bass thump with a noise crack (impact).
 _HITS = {
-    "whoosh": ("anoisesrc=color=pink:amplitude=0.8:duration=0.7,highpass=f=800,lowpass=f=6000,"
-               "afade=t=in:st=0:d=0.45,afade=t=out:st=0.45:d=0.25,volume=-8dB"),
-    "impact": ("sine=frequency=48:duration=0.9,volume=6dB,afade=t=out:st=0.05:d=0.85[s];"
-               "anoisesrc=color=brown:amplitude=1:duration=0.35,lowpass=f=1800,afade=t=out:st=0.02:d=0.3,volume=-4dB[n];"
-               "[s][n]amix=inputs=2:normalize=0"),
+    "whoosh": (
+        "anoisesrc=color=pink:amplitude=0.8:duration=0.7,highpass=f=800,lowpass=f=6000,"
+        "afade=t=in:st=0:d=0.45,afade=t=out:st=0.45:d=0.25,volume=-8dB"
+    ),
+    "impact": (
+        "sine=frequency=48:duration=0.9,volume=6dB,afade=t=out:st=0.05:d=0.85[s];"
+        "anoisesrc=color=brown:amplitude=1:duration=0.35,lowpass=f=1800,afade=t=out:st=0.02:d=0.3,volume=-4dB[n];"
+        "[s][n]amix=inputs=2:normalize=0"
+    ),
 }
 
 
@@ -463,7 +501,9 @@ def foley_graph(edit: Edit, spans: list[tuple[float, float]], seconds: float) ->
     parts, labels = [], []
     bed = AMBIENCES[edit.ambience]
     if bed:
-        parts.append(f"{bed},atrim=0:{seconds:.3f},afade=t=in:d=1,afade=t=out:st={max(0.0, seconds - 1.5):.3f}:d=1.5[bed]")
+        parts.append(
+            f"{bed},atrim=0:{seconds:.3f},afade=t=in:d=1,afade=t=out:st={max(0.0, seconds - 1.5):.3f}:d=1.5[bed]"
+        )
         labels.append("[bed]")
     for i, (kind, at) in enumerate(sfx_events(edit, spans)):
         chain = _HITS[kind]
@@ -477,8 +517,10 @@ def foley_graph(edit: Edit, spans: list[tuple[float, float]], seconds: float) ->
         labels.append(f"[h{i}]")
     if not labels:
         return None
-    parts.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,"
-                 f"aformat=channel_layouts=stereo,atrim=0:{seconds:.3f},apad=whole_dur={seconds:.3f}[fx]")
+    parts.append(
+        f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,"
+        f"aformat=channel_layouts=stereo,atrim=0:{seconds:.3f},apad=whole_dur={seconds:.3f}[fx]"
+    )
     return ";".join(parts)
 
 
@@ -488,10 +530,28 @@ def upscale_command(edit: Edit, source: str, output: str, env: dict) -> list[str
     if not home or not python:
         raise EditError("this worker has no video upscaler installed (SEEDVR2_HOME / SEEDVR2_PYTHON)")
     models = os.path.join(env.get("MEDIA_MODELS_DIR", "/models"), "seedvr2")
-    return [python, os.path.join(home, "inference_cli.py"), source, "--output", output, "--resolution",
-            str(min(edit.size)), "--dit_model", SEEDVR2_DIT, "--model_dir", models, "--batch_size", "5",
-            "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4",
-            *(["--vae_encode_tiled", "--vae_decode_tiled"] if min(edit.size) > 1080 else [])]
+    return [
+        python,
+        os.path.join(home, "inference_cli.py"),
+        source,
+        "--output",
+        output,
+        "--resolution",
+        str(min(edit.size)),
+        "--dit_model",
+        SEEDVR2_DIT,
+        "--model_dir",
+        models,
+        "--batch_size",
+        "5",
+        "--attention_mode",
+        "sdpa",
+        "--color_correction",
+        "lab",
+        "--output_format",
+        "mp4",
+        *(["--vae_encode_tiled", "--vae_decode_tiled"] if min(edit.size) > 1080 else []),
+    ]
 
 
 def segment_workers(shots: int, cpus: int | None = None) -> int:
@@ -511,19 +571,30 @@ def find_font(env: dict | None = None) -> str:
 def metadata_args(edit: Edit, provenance: dict | None = None) -> list[str]:
     """The AI-generated label in the file's own metadata, beside the one drawn on the picture (pure)."""
     note = {"aiGenerated": True, "label": edit.label, "generator": "Orazaka cinematic short", **(provenance or {})}
-    return ["-metadata", f"comment={edit.label} — made with Orazaka (AI-generated video)",
-            "-metadata", "description=" + json.dumps(note, separators=(",", ":"), ensure_ascii=False),
-            "-metadata", "copyright=AI-generated content"]
+    return [
+        "-metadata",
+        f"comment={edit.label} — made with Orazaka (AI-generated video)",
+        "-metadata",
+        "description=" + json.dumps(note, separators=(",", ":"), ensure_ascii=False),
+        "-metadata",
+        "copyright=AI-generated content",
+    ]
 
 
 def _probe_seconds(path: str) -> float:
-    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", path],
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    )
     return float(json.loads(out.stdout)["format"]["duration"])
 
 
-def cut(clips: list[str], edit: Edit, output_path: str, provenance: dict | None = None,
-        font: str | None = None) -> dict:
+def cut(
+    clips: list[str], edit: Edit, output_path: str, provenance: dict | None = None, font: str | None = None
+) -> dict:
     """Makes the film of ``edit`` from ``clips`` (readable files, in the order the edit's ``clip`` indexes).
 
     Returns what the file is, measured on it: duration, size, shot count — what billing settles against.
@@ -545,25 +616,53 @@ def cut(clips: list[str], edit: Edit, output_path: str, provenance: dict | None 
         if edit.upscale == "seedvr2":
             for index in sorted({shot.clip for shot in edit.shots}):
                 target = os.path.join(staging, f"up-{index:02d}.mp4")
-                _run_in(upscale_command(edit, os.path.abspath(clips[index]), target, dict(os.environ)),
-                        os.environ.get("SEEDVR2_HOME", staging))
+                _run_in(
+                    upscale_command(edit, os.path.abspath(clips[index]), target, dict(os.environ)),
+                    os.environ.get("SEEDVR2_HOME", staging),
+                )
                 upscaled[index] = target
         clips = [upscaled.get(i, path) for i, path in enumerate(clips)]
         segments = [os.path.join(staging, f"shot-{i:02d}.mp4") for i in range(len(edit.shots))]
 
         def make(i: int) -> None:
             shot = edit.shots[i]
-            _run_in(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{shot.start:.3f}",
-                     "-to", f"{shot.end:.3f}", "-i", os.path.abspath(clips[shot.clip]), "-an",
-                     "-vf", shot_filter(edit, shot), "-c:v", "libx264", "-preset", "medium", "-crf", "16",
-                     "-r", str(edit.fps), segments[i]], staging)
+            _run_in(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-ss",
+                    f"{shot.start:.3f}",
+                    "-to",
+                    f"{shot.end:.3f}",
+                    "-i",
+                    os.path.abspath(clips[shot.clip]),
+                    "-an",
+                    "-vf",
+                    shot_filter(edit, shot),
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "medium",
+                    "-crf",
+                    "16",
+                    "-r",
+                    str(edit.fps),
+                    segments[i],
+                ],
+                staging,
+            )
 
         # Motion-compensated interpolation is single-threaded: the shots are made side by side, one per spare core.
         with ThreadPoolExecutor(max_workers=segment_workers(len(edit.shots))) as pool:
             list(pool.map(make, range(len(edit.shots))))
         durations = [_probe_seconds(segment) for segment in segments]
         spans = timeline(edit)
-        graph = join_filter(edit, durations) + ";[joined]" + ",".join(overlay_filters(edit, spans, font, staging)) + "[out]"
+        graph = (
+            join_filter(edit, durations) + ";[joined]" + ",".join(overlay_filters(edit, spans, font, staging)) + "[out]"
+        )
         length = spans[-1][1]
         fx = foley_graph(edit, spans, length)
         audio = ["-map", "[fx]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] if fx else []
@@ -572,16 +671,45 @@ def cut(clips: list[str], edit: Edit, output_path: str, provenance: dict | None 
         command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
         for segment in segments:
             command += ["-i", segment]
-        command += ["-filter_complex", graph, "-map", "[out]", *audio, "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                    "-pix_fmt", "yuv420p", "-r", str(edit.fps), "-t", f"{length:.3f}", *metadata_args(edit, provenance),
-                    "-movflags", "+faststart", output_path]
+        command += [
+            "-filter_complex",
+            graph,
+            "-map",
+            "[out]",
+            *audio,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            str(edit.fps),
+            "-t",
+            f"{length:.3f}",
+            *metadata_args(edit, provenance),
+            "-movflags",
+            "+faststart",
+            output_path,
+        ]
         _run_in(command, staging)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     width, height = edit.size
-    return {"durationSeconds": round(_probe_seconds(output_path), 3), "width": width, "height": height,
-            "shots": len(edit.shots), "grade": edit.grade, "fps": edit.fps, "upscale": edit.upscale,
-            "ambience": edit.ambience, "sfx": len(sfx_events(edit, timeline(edit))), "master": edit.master}
+    return {
+        "durationSeconds": round(_probe_seconds(output_path), 3),
+        "width": width,
+        "height": height,
+        "shots": len(edit.shots),
+        "grade": edit.grade,
+        "fps": edit.fps,
+        "upscale": edit.upscale,
+        "ambience": edit.ambience,
+        "sfx": len(sfx_events(edit, timeline(edit))),
+        "master": edit.master,
+    }
 
 
 def _run_in(command: list[str], cwd: str) -> None:

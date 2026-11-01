@@ -13,15 +13,13 @@ try:
 except ImportError:
     export_to_video = None
 
+
 def is_apple_silicon() -> bool:
     """Detect if running on an Apple Silicon (macOS arm64) host."""
     return sys.platform == "darwin" and platform.machine() == "arm64"
 
-def export_frames_to_video(
-    frames: List[Image.Image],
-    output_path: str,
-    fps: int = 7
-) -> None:
+
+def export_frames_to_video(frames: List[Image.Image], output_path: str, fps: int = 7) -> None:
     """
     Encodes list of PIL Images into an MP4 video.
     Uses h264_videotoolbox on Apple Silicon for hardware acceleration,
@@ -39,7 +37,10 @@ def export_frames_to_video(
         raise ValueError("Output path filename cannot start with a hyphen.")
     # The encoder confines its own output (defence in depth): it never trusts that the caller validated.
     from app import main  # deferred: main imports this module
-    if not any(os.path.commonpath([root, output_path]) == root for root in map(os.path.realpath, main._allowed_roots())):
+
+    if not any(
+        os.path.commonpath([root, output_path]) == root for root in map(os.path.realpath, main._allowed_roots())
+    ):
         raise PermissionError("Output path is outside the allowed directories.")
 
     # Try hardware-accelerated encoding using FFmpeg command line
@@ -51,7 +52,7 @@ def export_frames_to_video(
             frame.save(frame_path, format="PNG")
 
         codec = "h264_videotoolbox" if is_apple_silicon() else "libx264"
-        
+
         # Build command: high-bitrate cinematic encoding
         # -b:v 8M forces dense spatial output (larger file sizes)
         # -profile:v high -level 4.1 for maximum H.264 compatibility
@@ -59,22 +60,30 @@ def export_frames_to_video(
         cmd = [
             "ffmpeg",
             "-y",
-            "-framerate", str(fps),
-            "-i", os.path.join(temp_dir, "frame_%04d.png"),
-            "-c:v", codec,
-            "-b:v", "8M",
-            "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-            output_path
+            "-framerate",
+            str(fps),
+            "-i",
+            os.path.join(temp_dir, "frame_%04d.png"),
+            "-c:v",
+            codec,
+            "-b:v",
+            "8M",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            output_path,
         ]
-        
+
         print(f"Executing encoder: {' '.join(cmd)}", flush=True)
         # Run subprocess silently
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         print("FFmpeg encoding completed successfully.", flush=True)
         return
     except Exception as e:
-        print(f"FFmpeg encoder failed or command not found: {e}. Falling back to diffusers export_to_video.", flush=True)
+        print(
+            f"FFmpeg encoder failed or command not found: {e}. Falling back to diffusers export_to_video.", flush=True
+        )
     finally:
         # Clean up temporary directory
         shutil.rmtree(temp_dir, ignore_errors=True)

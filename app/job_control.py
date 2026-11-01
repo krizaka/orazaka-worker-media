@@ -8,6 +8,7 @@ Stopping is **cooperative**: killing a half-rendered GPU job leaves the accelera
 than finishing it. The generators call :func:`raise_if_cancelled` at each step boundary, so a render
 ends within one denoising step, and a job that was still queued is dropped when its message arrives.
 """
+
 from __future__ import annotations
 
 import threading
@@ -66,7 +67,7 @@ def job_id_from_routing_key(routing_key: str) -> str | None:
     """``job.cancel.<id>`` -> ``<id>``; anything else -> ``None``."""
     if not routing_key or not routing_key.startswith(CANCEL_PREFIX):
         return None
-    job_id = routing_key[len(CANCEL_PREFIX):].strip()
+    job_id = routing_key[len(CANCEL_PREFIX) :].strip()
     return job_id or None
 
 

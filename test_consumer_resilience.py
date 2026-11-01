@@ -1,4 +1,5 @@
 """The consumer survives a dropped tunnel: it reconnects, and a redelivered job is never rendered twice (no broker, no GPU)."""
+
 from __future__ import annotations
 
 import json
@@ -94,8 +95,10 @@ class TestRedelivery(unittest.TestCase):
         channel.connection.add_callback_threadsafe.side_effect = FakeAMQPError("gone")
         method = MagicMock(delivery_tag=1, routing_key="job.video.generate")
         body = json.dumps({"jobId": "job-10", "userId": "u-1", "payload": {"prompt": "x"}}).encode()
-        with patch.object(consumer, "pika", fake_pika()), patch.object(consumer, "_generate", side_effect=ValueError("boom")), patch.object(
-            consumer, "send_job_error"
+        with (
+            patch.object(consumer, "pika", fake_pika()),
+            patch.object(consumer, "_generate", side_effect=ValueError("boom")),
+            patch.object(consumer, "send_job_error"),
         ):
             consumer._on_message(channel, method, None, body)  # must not raise
 

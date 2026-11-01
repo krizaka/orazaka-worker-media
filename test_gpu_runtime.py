@@ -3,6 +3,7 @@
 Runs without a GPU and without torch: every pipeline is replaced by a recorder, so what is asserted is
 what the worker *asks* of a model — its size, frame count, steps, seed — and where the result goes.
 """
+
 from __future__ import annotations
 
 import functools
@@ -81,7 +82,12 @@ class TestModelRouting(unittest.TestCase):
     """Which model runs is the catalogue's choice, then the host's declared default — never a guess."""
 
     def test_the_host_default_is_declared_by_the_deployment(self):
-        self.assertEqual("wan2.1-t2v-1.3b", video_models.default_model_name({"MEDIA_VIDEO_DEFAULT_MODEL": "wan2.1-t2v-1.3b", "MEDIA_GPU_PROFILE": "big"}))
+        self.assertEqual(
+            "wan2.1-t2v-1.3b",
+            video_models.default_model_name(
+                {"MEDIA_VIDEO_DEFAULT_MODEL": "wan2.1-t2v-1.3b", "MEDIA_GPU_PROFILE": "big"}
+            ),
+        )
         self.assertEqual("wan2.2-ti2v-5b", video_models.default_model_name({"MEDIA_GPU_PROFILE": "big"}))
         self.assertEqual("wan2.1-t2v-1.3b", video_models.default_model_name({"MEDIA_GPU_PROFILE": "small"}))
         self.assertEqual("animatediff-lightning-mps", video_models.default_model_name({}))
@@ -108,7 +114,9 @@ class TestModelRouting(unittest.TestCase):
         for name, spec in manifest["video"].items():
             # OpenRAIL-M permits commercial use (with use restrictions): AnimateDiff Lightning's card says so.
             # The LTX-Video Open Weights License 0.X grants commercial use with no revenue clause (read in the model's licence file).
-            self.assertIn(spec["licence"], {"Apache-2.0", "MIT", "CreativeML OpenRAIL-M", "LTX-Video-Open-Weights-0.X"}, name)
+            self.assertIn(
+                spec["licence"], {"Apache-2.0", "MIT", "CreativeML OpenRAIL-M", "LTX-Video-Open-Weights-0.X"}, name
+            )
             if spec["pipeline"] in ("wan", "ltx"):
                 self.assertRegex(spec["revision"], r"^[0-9a-f]{40}$", name)
 
@@ -165,14 +173,22 @@ class TestTheStudioOffersWhatTheCatalogueAndThisWorkerKnow(unittest.TestCase):
         workspace = _workspace_root()
         if workspace is None:
             self.skipTest("the blueprint and the catalogue live in the Orazaka workspace")
-        blueprint = json.loads((workspace / "orazaka-packs" / "orazaka-media" / "studios" / "video-generation" / "blueprint.json").read_text())
+        blueprint = json.loads(
+            (
+                workspace / "orazaka-packs" / "orazaka-media" / "studios" / "video-generation" / "blueprint.json"
+            ).read_text()
+        )
         offered = blueprint["inputSchema"]["properties"].get("model", {}).get("enum")
         if not offered:
             self.skipTest("this blueprint offers no model list yet")
-        seed = (workspace / "orazaka-apps" / "services" / "orazaka-job-service" / "infra" / "initdb" / "30-jobs-config.sql").read_text()
+        seed = (
+            workspace / "orazaka-apps" / "services" / "orazaka-job-service" / "infra" / "initdb" / "30-jobs-config.sql"
+        ).read_text()
         registry = _main().MODEL_REGISTRY
         for name in offered:
-            self.assertRegex(seed, rf"\('{re.escape(name)}', '[^']+', 'video'", f"{name} is not a video row of the catalogue")
+            self.assertRegex(
+                seed, rf"\('{re.escape(name)}', '[^']+', 'video'", f"{name} is not a video row of the catalogue"
+            )
             self.assertIn(name, registry, f"{name} is not a model this worker runs")
         aspects = blueprint["inputSchema"]["properties"].get("aspect", {}).get("enum", [])
         for aspect in aspects:
@@ -192,7 +208,9 @@ class TestSdServerLine(unittest.TestCase):
         self.assertEqual("4", line[line.index("--steps") + 1])
         self.assertIn("--diffusion-fa", line)
         self.assertNotIn("--offload-to-cpu", line)
-        self.assertIn("--offload-to-cpu", sd_server.args("flux-2-klein-4b", Path("/m"), 8086, {"MEDIA_IMAGE_OFFLOAD": "true"}))
+        self.assertIn(
+            "--offload-to-cpu", sd_server.args("flux-2-klein-4b", Path("/m"), 8086, {"MEDIA_IMAGE_OFFLOAD": "true"})
+        )
 
     def test_the_flux_schnell_line(self):
         from app import sd_server
@@ -310,14 +328,16 @@ class TestWanThroughTheHttpPipeline(unittest.TestCase):
 
     def test_a_9_16_short_is_704_by_1280_at_24_fps_for_five_seconds(self):
         out = os.path.join(tempfile.gettempdir(), "orz-test", "video.mp4")
-        status, body = self._post({
-            "prompt": "a barista pours latte art, close-up",
-            "model": "wan2.2-ti2v-5b",
-            "aspect": "9:16",
-            "durationSeconds": 5,
-            "seed": 42,
-            "output_path": out,
-        })
+        status, body = self._post(
+            {
+                "prompt": "a barista pours latte art, close-up",
+                "model": "wan2.2-ti2v-5b",
+                "aspect": "9:16",
+                "durationSeconds": 5,
+                "seed": 42,
+                "output_path": out,
+            }
+        )
         self.assertEqual(200, status, body)
         call = self.calls[0]
         self.assertEqual((704, 1280), (call["width"], call["height"]))
@@ -343,9 +363,13 @@ class TestWanThroughTheHttpPipeline(unittest.TestCase):
         out = os.path.join(tempfile.gettempdir(), "orz-test", "video.mp4")
         frame = MagicMock()
         frame.size = (432, 768)
-        with patch.object(self.main, "generate_video_frames_mlx", return_value=[frame] * 16) as animatediff, \
-                patch.object(self.main, "generate_video_frames") as svd:
-            status, body = self._post({"prompt": "x", "model": "animatediff-lightning-mps", "aspect": "9:16", "output_path": out})
+        with (
+            patch.object(self.main, "generate_video_frames_mlx", return_value=[frame] * 16) as animatediff,
+            patch.object(self.main, "generate_video_frames") as svd,
+        ):
+            status, body = self._post(
+                {"prompt": "x", "model": "animatediff-lightning-mps", "aspect": "9:16", "output_path": out}
+            )
         self.assertEqual(200, status, body)
         svd.assert_not_called()
         self.assertEqual((432, 768), (animatediff.call_args.kwargs["width"], animatediff.call_args.kwargs["height"]))
@@ -370,12 +394,14 @@ class TestWanThroughTheHttpPipeline(unittest.TestCase):
 
 class TestBrokerLogin(unittest.TestCase):
     def test_credentials_come_from_the_deployment(self):
-        params = broker.connection_parameters({
-            "SPRING_RABBITMQ_HOST": "127.0.0.1",
-            "SPRING_RABBITMQ_PORT": "5673",
-            "SPRING_RABBITMQ_USERNAME": "orazaka",
-            "SPRING_RABBITMQ_PASSWORD": "s3cret-value",
-        })
+        params = broker.connection_parameters(
+            {
+                "SPRING_RABBITMQ_HOST": "127.0.0.1",
+                "SPRING_RABBITMQ_PORT": "5673",
+                "SPRING_RABBITMQ_USERNAME": "orazaka",
+                "SPRING_RABBITMQ_PASSWORD": "s3cret-value",
+            }
+        )
         self.assertEqual(("127.0.0.1", 5673), (params.host, params.port))
         self.assertEqual("orazaka", params.credentials.username)
         self.assertIsNone(params.ssl_options)
@@ -384,7 +410,9 @@ class TestBrokerLogin(unittest.TestCase):
     def test_tls_verifies_the_broker(self):
         import ssl
 
-        params = broker.connection_parameters({"SPRING_RABBITMQ_HOST": "mq.example.org", "SPRING_RABBITMQ_SSL_ENABLED": "true"})
+        params = broker.connection_parameters(
+            {"SPRING_RABBITMQ_HOST": "mq.example.org", "SPRING_RABBITMQ_SSL_ENABLED": "true"}
+        )
         context = params.ssl_options.context
         self.assertEqual(ssl.CERT_REQUIRED, context.verify_mode)
         self.assertTrue(context.check_hostname)
@@ -398,17 +426,36 @@ class TestBrokerLogin(unittest.TestCase):
         directory = Path(tempfile.mkdtemp(prefix="orz-ca-"))
         ca = directory / "ca.pem"
         subprocess.run(
-            ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes",
-             "-days", "1", "-subj", "/CN=test CA", "-keyout", str(directory / "ca.key"), "-out", str(ca)],
-            check=True, capture_output=True,
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "ec",
+                "-pkeyopt",
+                "ec_paramgen_curve:P-256",
+                "-nodes",
+                "-days",
+                "1",
+                "-subj",
+                "/CN=test CA",
+                "-keyout",
+                str(directory / "ca.key"),
+                "-out",
+                str(ca),
+            ],
+            check=True,
+            capture_output=True,
         )
-        params = broker.connection_parameters({
-            "SPRING_RABBITMQ_HOST": "127.0.0.1",
-            "SPRING_RABBITMQ_PORT": "5671",
-            "SPRING_RABBITMQ_SSL_ENABLED": "true",
-            "SPRING_RABBITMQ_SSL_CA_FILE": str(ca),
-            "SPRING_RABBITMQ_SSL_SERVER_NAME": "broker-dev.orazaka.com",
-        })
+        params = broker.connection_parameters(
+            {
+                "SPRING_RABBITMQ_HOST": "127.0.0.1",
+                "SPRING_RABBITMQ_PORT": "5671",
+                "SPRING_RABBITMQ_SSL_ENABLED": "true",
+                "SPRING_RABBITMQ_SSL_CA_FILE": str(ca),
+                "SPRING_RABBITMQ_SSL_SERVER_NAME": "broker-dev.orazaka.com",
+            }
+        )
         self.assertEqual("broker-dev.orazaka.com", params.ssl_options.server_hostname)
         self.assertEqual(ssl.CERT_REQUIRED, params.ssl_options.context.verify_mode)
         subjects = [dict(x[0] for x in cert["subject"]) for cert in params.ssl_options.context.get_ca_certs()]
@@ -427,7 +474,12 @@ class TestAssetHandOver(unittest.TestCase):
         self.dir = tempfile.mkdtemp(prefix="orz-sink-")
         self.path = os.path.join(self.dir, "video.mp4")
         Path(self.path).write_bytes(b"\x00\x00\x00\x18ftypmp42")
-        self.job = {"jobId": "job-9", "userId": "user-1", "featureKey": "orazaka.core.media.video", "dataClass": "STANDARD"}
+        self.job = {
+            "jobId": "job-9",
+            "userId": "user-1",
+            "featureKey": "orazaka.core.media.video",
+            "dataClass": "STANDARD",
+        }
 
     def test_upload_puts_the_bytes_with_the_run_identity(self):
         sent = {}
@@ -452,7 +504,10 @@ class TestAssetHandOver(unittest.TestCase):
             return Response()
 
         env = {"MEDIA_ASSET_SINK_URL": "http://127.0.0.1:8090/"}
-        with patch.object(asset_sink, "_service_token", return_value="tok"), patch.object(asset_sink.urllib.request, "urlopen", fake_urlopen):
+        with (
+            patch.object(asset_sink, "_service_token", return_value="tok"),
+            patch.object(asset_sink.urllib.request, "urlopen", fake_urlopen),
+        ):
             url = asset_sink.upload(self.path, self.job, "video.mp4", "video/mp4", env)
         self.assertEqual("/api/v1/assets/job-9/video.mp4", url)
         self.assertEqual("http://127.0.0.1:8090/internal/v1/jobs/job-9/output/video.mp4", sent["url"])
@@ -466,15 +521,20 @@ class TestAssetHandOver(unittest.TestCase):
             asset_sink.upload(self.path, self.job, "../video.mp4", "video/mp4", {"MEDIA_ASSET_SINK_URL": "http://x"})
 
     def test_no_token_no_upload(self):
-        with patch.object(asset_sink, "_service_token", return_value=None), self.assertRaises(asset_sink.AssetSinkError):
+        with (
+            patch.object(asset_sink, "_service_token", return_value=None),
+            self.assertRaises(asset_sink.AssetSinkError),
+        ):
             asset_sink.upload(self.path, self.job, "video.mp4", "video/mp4", {"MEDIA_ASSET_SINK_URL": "http://x"})
 
     def test_the_consumer_hands_over_and_deletes_when_a_sink_is_declared(self):
         import app.consumer as consumer
 
-        with patch.dict(os.environ, {"MEDIA_ASSET_SINK_URL": "http://127.0.0.1:8090"}), \
-                patch.object(consumer.asset_sink, "upload", return_value="/api/v1/assets/job-9/video.mp4") as upload, \
-                patch.object(consumer, "_seal") as seal:
+        with (
+            patch.dict(os.environ, {"MEDIA_ASSET_SINK_URL": "http://127.0.0.1:8090"}),
+            patch.object(consumer.asset_sink, "upload", return_value="/api/v1/assets/job-9/video.mp4") as upload,
+            patch.object(consumer, "_seal") as seal,
+        ):
             url = consumer._store(self.path, self.job, "video.mp4", "video/mp4", "/uploads/x")
         self.assertEqual("/api/v1/assets/job-9/video.mp4", url)
         upload.assert_called_once()
@@ -581,9 +641,12 @@ class TestHeartbeat(unittest.TestCase):
 
         channel, method = MagicMock(), MagicMock(routing_key="media.video", delivery_tag=1)
         body = json.dumps({"jobId": "hb-job", "userId": "u", "payload": {"prompt": "x"}}).encode()
-        with patch.dict(os.environ, {"MEDIA_HEARTBEAT_FILE": str(target)}), \
-                patch.object(consumer, "_generate", side_effect=fake_generate), patch.object(consumer, "send_job_done"), \
-                patch.object(consumer, "send_progress_update"):
+        with (
+            patch.dict(os.environ, {"MEDIA_HEARTBEAT_FILE": str(target)}),
+            patch.object(consumer, "_generate", side_effect=fake_generate),
+            patch.object(consumer, "send_job_done"),
+            patch.object(consumer, "send_progress_update"),
+        ):
             consumer._on_message(channel, method, None, body)
         self.assertEqual([True], seen, "the heartbeat is fresh while the job runs")
         self.assertFalse([t for t in threading.enumerate() if t.name == "media-heartbeat"])
@@ -594,8 +657,10 @@ class TestHeartbeat(unittest.TestCase):
         target = self._target()
         seen = []
         model = MagicMock(pipeline="ltx")
-        with patch.dict(os.environ, {"MEDIA_HEARTBEAT_FILE": str(target)}), \
-                patch.object(wan_generator, "_load_ltx", side_effect=lambda m: seen.append(target.exists()) or "pipe"):
+        with (
+            patch.dict(os.environ, {"MEDIA_HEARTBEAT_FILE": str(target)}),
+            patch.object(wan_generator, "_load_ltx", side_effect=lambda m: seen.append(target.exists()) or "pipe"),
+        ):
             self.assertEqual("pipe", wan_generator._load(model))
         self.assertEqual([True], seen, "the heartbeat is fresh while the weights load")
 

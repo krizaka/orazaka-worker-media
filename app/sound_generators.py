@@ -8,6 +8,7 @@ a model the file does not name is refused by name, never replaced by another one
 A kind has one default, and it is always commercial. A non-commercial model (MMAudio's weights are
 CC-BY-NC) runs only when a job names it.
 """
+
 from __future__ import annotations
 
 import gc
@@ -56,14 +57,20 @@ def sound_models(manifest: dict | None = None) -> dict[str, SoundModel]:
     found = {}
     for name, spec in (manifest.get("sound") or {}).items():
         found[name] = SoundModel(
-            name=name, kind=spec["kind"], label=spec.get("label", name), licence=spec["licence"],
-            commercial=bool(spec.get("commercial", False)), default=bool(spec.get("default", False)),
-            spec=spec)
+            name=name,
+            kind=spec["kind"],
+            label=spec.get("label", name),
+            licence=spec["licence"],
+            commercial=bool(spec.get("commercial", False)),
+            default=bool(spec.get("default", False)),
+            spec=spec,
+        )
     return found
 
 
-def resolve(kind: str, requested: str | None, manifest: dict | None = None,
-            env: dict | None = None) -> SoundModel | None:
+def resolve(
+    kind: str, requested: str | None, manifest: dict | None = None, env: dict | None = None
+) -> SoundModel | None:
     """The model of ``kind`` a job gets: the one it named, else the kind's commercial default, else none.
 
     Raises:
@@ -79,13 +86,15 @@ def resolve(kind: str, requested: str | None, manifest: dict | None = None,
             raise UnknownSoundModel(f"'{requested}' is not a {kind} model this worker runs ({names})")
         if not chosen.commercial and not non_commercial_allowed(env):
             raise NonCommercialWeightRefused(
-                f"'{chosen.name}' has non-commercial weights ({chosen.licence}) and this deployment does not run them")
+                f"'{chosen.name}' has non-commercial weights ({chosen.licence}) and this deployment does not run them"
+            )
         return chosen
     return next((m for m in models.values() if m.kind == kind and m.default), None)
 
 
 def _device() -> tuple[str, "object"]:
     import torch
+
     if torch.cuda.is_available():
         return "cuda", torch.bfloat16
     if torch.backends.mps.is_available():
@@ -112,11 +121,14 @@ def generate_music(model: SoundModel, prompt: str, seconds: float, out_wav: str,
     loaded = time.time()
     generator = torch.Generator(device="cpu").manual_seed(seed)
     audio = pipe(
-        prompt=prompt, lyrics="[Instrumental]", audio_duration=seconds,
-        num_inference_steps=int(spec.get("steps", 8)), guidance_scale=float(spec.get("guidance", 7.0)),
+        prompt=prompt,
+        lyrics="[Instrumental]",
+        audio_duration=seconds,
+        num_inference_steps=int(spec.get("steps", 8)),
+        guidance_scale=float(spec.get("guidance", 7.0)),
         generator=generator,
     ).audios
-    wave = audio[0].float().cpu().numpy().T   # (samples, channels)
+    wave = audio[0].float().cpu().numpy().T  # (samples, channels)
     soundfile.write(out_wav, wave, int(spec.get("sampleRate", 48000)))
     timings = {"loadSeconds": round(loaded - started, 1), "generateSeconds": round(time.time() - loaded, 1)}
     del pipe, audio
@@ -126,8 +138,9 @@ def generate_music(model: SoundModel, prompt: str, seconds: float, out_wav: str,
     return {"model": model.name, "seed": seed, "device": device, "audioSeconds": seconds, **timings}
 
 
-def generate_foley(model: SoundModel, video: str, prompt: str, seconds: float, out_wav: str,
-                   seed: int | None = None) -> dict:
+def generate_foley(
+    model: SoundModel, video: str, prompt: str, seconds: float, out_wav: str, seed: int | None = None
+) -> dict:
     """Foley synchronised to ``video`` (MMAudio), made by its own runner in its own interpreter.
 
     MMAudio pins a different torch stack than this worker's; ``SOUND_PYTHON`` names the interpreter that
@@ -139,15 +152,34 @@ def generate_foley(model: SoundModel, video: str, prompt: str, seconds: float, o
     seed = int(seed) if seed is not None else int(time.time()) % 2**31
     seconds = min(float(seconds), float(model.spec.get("maxSeconds", 8)))
     started = time.time()
-    command = [python, str(RUNNER), "--video", video, "--prompt", prompt, "--duration", f"{seconds:.3f}",
-               "--seed", str(seed), "--variant", model.spec["variant"], "--out", out_wav]
+    command = [
+        python,
+        str(RUNNER),
+        "--video",
+        video,
+        "--prompt",
+        prompt,
+        "--duration",
+        f"{seconds:.3f}",
+        "--seed",
+        str(seed),
+        "--variant",
+        model.spec["variant"],
+        "--out",
+        out_wav,
+    ]
     # MMAudio downloads its weights (~6 GB) into ./weights and ./ext_weights of its working directory:
     # that is the sound home, never the checkout.
     home = os.environ.get("SOUND_HOME") or os.path.expanduser("~/.orazaka/sound")
-    done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
-                          cwd=home)
+    done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False, cwd=home)
     if done.returncode != 0:
         sys.stderr.write(done.stderr[-2000:])
-        raise RuntimeError(f"the foley model failed: {done.stderr.strip().splitlines()[-1] if done.stderr.strip() else done.returncode}")
-    return {"model": model.name, "seed": seed, "audioSeconds": seconds,
-            "generateSeconds": round(time.time() - started, 1)}
+        raise RuntimeError(
+            f"the foley model failed: {done.stderr.strip().splitlines()[-1] if done.stderr.strip() else done.returncode}"
+        )
+    return {
+        "model": model.name,
+        "seed": seed,
+        "audioSeconds": seconds,
+        "generateSeconds": round(time.time() - started, 1),
+    }

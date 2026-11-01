@@ -61,7 +61,9 @@ class TestStaging(unittest.TestCase):
 
     def test_staging_copies_everything_and_reports_the_bytes_read(self):
         seen = []
-        out = model_cache.stage(self.src, self.tmp / "nvme", workers=3, chunk=64_000, progress=lambda r, t: seen.append((r, t)))
+        out = model_cache.stage(
+            self.src, self.tmp / "nvme", workers=3, chunk=64_000, progress=lambda r, t: seen.append((r, t))
+        )
         self.assertEqual([], model_cache.verify(out, deep=True))
         self.assertEqual(300_002, seen[-1][0])
         self.assertTrue(all(total == 300_002 for _, total in seen))
@@ -122,7 +124,10 @@ class TestLocalSnapshot(unittest.TestCase):
 
     def test_the_snapshot_directory_is_found_by_layout_even_when_only_some_files_were_fetched(self):
         cache = Path(tempfile.mkdtemp())
-        snap = make_snapshot(cache / "models--Wan-AI--Wan2.2-TI2V-5B-Diffusers" / "snapshots" / "abc123", {"transformer/x.safetensors": b"1"})
+        snap = make_snapshot(
+            cache / "models--Wan-AI--Wan2.2-TI2V-5B-Diffusers" / "snapshots" / "abc123",
+            {"transformer/x.safetensors": b"1"},
+        )
         self.assertEqual(snap, model_cache.local_snapshot("Wan-AI/Wan2.2-TI2V-5B-Diffusers", "abc123", str(cache)))
 
     def test_the_cache_defaults_to_HF_HUB_CACHE(self):

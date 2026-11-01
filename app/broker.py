@@ -9,6 +9,7 @@ credentials. The connection is therefore declared by the deployment, never assum
 The variable names are Spring's (``SPRING_RABBITMQ_*``) on purpose: the Java services read the same
 ones, so one environment file describes the broker for every process of the platform.
 """
+
 from __future__ import annotations
 
 import os

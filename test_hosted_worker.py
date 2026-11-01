@@ -1,4 +1,5 @@
 """The hosted-only worker: a cheap CPU consumer for the models a provider serves (no GPU, no torch), on its own queue."""
+
 from __future__ import annotations
 
 import unittest
@@ -16,7 +17,13 @@ class TestHostedWorker(unittest.TestCase):
     def test_it_has_its_own_queue_name_and_registers_itself_as_another_worker(self):
         import app.consumer as consumer
 
-        base = {"name": "orazaka-worker-media", "family": "media", "bindings": ["job.video.*", "job.compose.*"], "version": "1.0.0", "concurrency": 1}
+        base = {
+            "name": "orazaka-worker-media",
+            "family": "media",
+            "bindings": ["job.video.*", "job.compose.*"],
+            "version": "1.0.0",
+            "concurrency": 1,
+        }
         self.assertEqual("orazaka.jobs.video", consumer.video_queue({}))
         self.assertEqual("orazaka.jobs.video.hosted", consumer.video_queue({"MEDIA_WORKER_HOSTED_ONLY": "true"}))
         self.assertEqual(base, consumer.apply_hosted(base, {}))
@@ -49,7 +56,9 @@ class TestHostedWorker(unittest.TestCase):
         self.assertIn("wan2.2-t2v-a14b", message)
         self.assertIn("hosted", message)
         self.assertIn("GPU", consumer.hosted_refusal("", env, find=models.__getitem__))
-        self.assertIsNone(consumer.hosted_refusal("wan2.2-t2v-a14b", {}, find=models.__getitem__), "the GPU worker runs anything")
+        self.assertIsNone(
+            consumer.hosted_refusal("wan2.2-t2v-a14b", {}, find=models.__getitem__), "the GPU worker runs anything"
+        )
 
 
 if __name__ == "__main__":

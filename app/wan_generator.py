@@ -7,6 +7,7 @@ loudly rather than downloading 34 GB in the middle of it.
 
 §12 Zero-Fallback: a failure raises. Nothing here ever returns a placeholder frame.
 """
+
 from __future__ import annotations
 
 import gc
@@ -137,9 +138,7 @@ def _load(model: VideoModel, from_image: bool = False, weights_progress=None):
     repo = staged or model.repo
     if staged:  # a local directory: no revision, no hub cache
         common = {"local_files_only": True}
-    vae = AutoencoderKLWan.from_pretrained(
-        repo, subfolder="vae", torch_dtype=torch.float32, **common
-    )
+    vae = AutoencoderKLWan.from_pretrained(repo, subfolder="vae", torch_dtype=torch.float32, **common)
     extra = {}
     if model.text_encoder_from:
         # Same umt5-xxl as the donor, kept in bf16 there: loaded from it rather than downloading a
@@ -166,9 +165,7 @@ def _load(model: VideoModel, from_image: bool = False, weights_progress=None):
             **extra,
         )
     else:
-        pipe = WanPipeline.from_pretrained(
-            repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra
-        )
+        pipe = WanPipeline.from_pretrained(repo, vae=vae, torch_dtype=torch.bfloat16, **common, **extra)
     if model.lora:
         _load_lora(pipe, model)
     total_gb = 0.0
@@ -183,7 +180,9 @@ def _load(model: VideoModel, from_image: bool = False, weights_progress=None):
     if hasattr(pipe.vae, "enable_tiling"):
         pipe.vae.enable_tiling()
     loaded = time.time() - started
-    stage_note = " (staged on NVMe)" if staged else (" (prefetched)" if os.environ.get("MEDIA_MODELS_PREFETCH") == "1" else "")
+    stage_note = (
+        " (staged on NVMe)" if staged else (" (prefetched)" if os.environ.get("MEDIA_MODELS_PREFETCH") == "1" else "")
+    )
     print(f"[wan] {model.name} loaded in {loaded:.1f}s{stage_note}, {placement}", flush=True)
     _pipe = pipe
     _pipe_name = _resident_name(model, from_image)
@@ -236,7 +235,9 @@ def _load_ltx(model: VideoModel):
     device = _device()
     started = time.time()
     cache = {"cache_dir": hub_cache(model)} if hub_cache(model) else {}  # `cache: scratch`: the host's own disk
-    pipe = LTXConditionPipeline.from_pretrained(model.repo, revision=model.revision, torch_dtype=torch.bfloat16, local_files_only=True, **cache)
+    pipe = LTXConditionPipeline.from_pretrained(
+        model.repo, revision=model.revision, torch_dtype=torch.bfloat16, local_files_only=True, **cache
+    )
     total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3) if device == "cuda" else 0.0
     if device == "cuda" and should_offload(model, total_gb):
         pipe.enable_model_cpu_offload()
@@ -250,7 +251,20 @@ def _load_ltx(model: VideoModel):
     return pipe
 
 
-def _run_ltx(pipe, model: VideoModel, prompt, negative, width, height, num_frames, steps, generator, image, focus, progress_callback):
+def _run_ltx(
+    pipe,
+    model: VideoModel,
+    prompt,
+    negative,
+    width,
+    height,
+    num_frames,
+    steps,
+    generator,
+    image,
+    focus,
+    progress_callback,
+):
     """One LTX generation: the still (cut to the frame's aspect) conditions frame 0, the distilled settings of the model do the rest."""
     import tempfile  # noqa: PLC0415
 
@@ -318,9 +332,7 @@ def generate_wan_frames(
         raise RuntimeError(f"model '{model_name}' is not a diffusers video model")
     from_image = image is not None
     if model.requires_image and not from_image:
-        raise InvalidVideoRequest(
-            f"model '{model_name}' starts from a photo: give it a starting image (a keyframe)"
-        )
+        raise InvalidVideoRequest(f"model '{model_name}' starts from a photo: give it a starting image (a keyframe)")
     if from_image and not model.image_to_video:
         raise InvalidVideoRequest(
             f"model '{model_name}' makes video from text only; leave the starting image empty "
@@ -337,8 +349,24 @@ def generate_wan_frames(
         extra = {"image": crop_to_aspect(image, w, h, focus)} if from_image else {}
         try:
             if model.pipeline == "ltx":
-                frames = _run_ltx(pipe, model, prompt, negative_prompt or DEFAULT_NEGATIVE_PROMPT, w, h, num_frames, steps, generator, image, focus, progress_callback)
-                print(f"[ltx] {model_name}{' (from a photo)' if from_image else ''} {w}x{h} {len(frames)} frames, {steps} steps, seed {seed}: {time.time() - started:.0f}s", flush=True)
+                frames = _run_ltx(
+                    pipe,
+                    model,
+                    prompt,
+                    negative_prompt or DEFAULT_NEGATIVE_PROMPT,
+                    w,
+                    h,
+                    num_frames,
+                    steps,
+                    generator,
+                    image,
+                    focus,
+                    progress_callback,
+                )
+                print(
+                    f"[ltx] {model_name}{' (from a photo)' if from_image else ''} {w}x{h} {len(frames)} frames, {steps} steps, seed {seed}: {time.time() - started:.0f}s",
+                    flush=True,
+                )
                 return list(frames)
             output = pipe(
                 prompt=prompt,

@@ -9,6 +9,7 @@ knows how to turn a list of assets into a video.
 ffmpeg does the work, hardware-accelerated on Apple Silicon like the rest of this
 worker. Nothing here reaches a network or a database.
 """
+
 import json
 import os
 import shutil
@@ -109,22 +110,32 @@ def compose(
         command = [
             "ffmpeg",
             "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", listing,
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            listing,
         ]
         if audio_path and os.path.isfile(audio_path):
             command += ["-i", audio_path, "-c:a", "aac", "-shortest"]
         command += [
-            "-c:v", codec,
-            "-b:v", "8M",
-            "-pix_fmt", "yuv420p",
-            "-vf", f"scale={width}:{height}",
-            "-r", str(OUTPUT_FPS),
+            "-c:v",
+            codec,
+            "-b:v",
+            "8M",
+            "-pix_fmt",
+            "yuv420p",
+            "-vf",
+            f"scale={width}:{height}",
+            "-r",
+            str(OUTPUT_FPS),
             # The slideshow's length is a ceiling on the work, not the bill: at a constant rate
             # the repeated last entry would otherwise hold the final still one extra period.
-            "-t", str(len(photos) * seconds_per_photo),
-            "-movflags", "+faststart",
+            "-t",
+            str(len(photos) * seconds_per_photo),
+            "-movflags",
+            "+faststart",
             output_path,
         ]
 
@@ -153,10 +164,22 @@ def _measure(path: str) -> dict:
     image already is.
     """
     probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0",
-         "-show_entries", "stream=width,height:format=duration",
-         "-of", "json", path],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height:format=duration",
+            "-of",
+            "json",
+            path,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+        text=True,
     )
     probed = json.loads(probe.stdout)
     stream = probed["streams"][0]
