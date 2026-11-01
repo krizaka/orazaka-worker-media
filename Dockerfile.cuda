@@ -38,9 +38,11 @@ RUN apt-get update \
 ENV VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:$PATH
 # Every wheel (pip, torch from PyTorch's cu128 index, and the rest) is pinned with its hash: requirements-cuda.lock
 # (regenerate with the command in requirements-cuda.in). pip then refuses anything the lock does not name.
+# Wheels only, except docopt 0.6.2 (num2words' CLI helper): it publishes a source archive and no wheel, so it is built from that
+# archive, still checked against its lock hash (krizaka-internal#2121; `--only-binary :all:` alone fails the build).
 COPY requirements-cuda.lock /tmp/requirements-cuda.lock
 RUN python3 -m venv /opt/venv \
- && /opt/venv/bin/python -m pip install --no-cache-dir --require-hashes --only-binary :all: -r /tmp/requirements-cuda.lock
+ && /opt/venv/bin/python -m pip install --no-cache-dir --require-hashes --only-binary :all: --no-binary docopt -r /tmp/requirements-cuda.lock
 COPY --from=sdcpp /sd-server /usr/local/bin/sd-server
 
 WORKDIR /app
