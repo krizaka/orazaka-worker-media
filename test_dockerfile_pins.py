@@ -31,3 +31,10 @@ def test_every_pip_install_requires_hashes_and_the_lock_hashes_every_pin():
     pins = re.findall(r"^[A-Za-z0-9_.\-]+==\S+ \\$", lock, re.M)
     assert pins and len(entries) == len(pins), "a pin of the lock has no sha256 hash"
     assert "torch==2.11.0+cu128" in lock and "pip==26.1.1" in lock
+
+
+def test_docopt_is_the_one_package_built_from_source():
+    """docopt 0.6.2 has no wheel: `--only-binary :all:` alone fails the CUDA image (krizaka-internal#2121). Only it is exempt."""
+    install = next(l for l in (Path(__file__).with_name("Dockerfile.cuda")).read_text().splitlines() if "pip install" in l)
+    assert "--only-binary :all:" in install
+    assert re.findall(r"--no-binary (\S+)", install) == ["docopt"]
