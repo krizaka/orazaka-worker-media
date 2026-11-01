@@ -1,0 +1,13 @@
+{
+  "project": "krizaka_orazaka-worker-media",
+  "counts": {
+    "bugs": 0,
+    "vulnerabilities": 0,
+    "hotspots": 0,
+    "smells_blocker": 1,
+    "smells_critical": 22,
+    "smells_major": 10,
+    "smells_minor": 5,
+    "smells_info": 0
+  }
+}
