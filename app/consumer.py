@@ -763,6 +763,8 @@ def _on_message(channel, method, properties, body) -> None:
     job_id = None
     hold_id = None
     activity.touch()
+    # The whole job, model load included, keeps the pod busy for the watchdog: a load after `ready` leaves the GPU idle.
+    heartbeat = activity.Heartbeat().start()
     try:
         job = json.loads(body.decode("utf-8"))
         job_id = job.get("jobId")
@@ -823,6 +825,7 @@ def _on_message(channel, method, properties, body) -> None:
             # hold is carried so billing releases it.
             send_job_error(job_id, str(e), hold_id=hold_id, cause=EXECUTOR_FAULT)
     finally:
+        heartbeat.stop()
         stages.release(job_id)
         activity.touch()
         # Acked from the connection's own thread (BlockingConnection is not thread-safe); a connection that is

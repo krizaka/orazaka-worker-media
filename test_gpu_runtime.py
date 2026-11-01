@@ -12,6 +12,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -532,6 +533,71 @@ class TestActivity(unittest.TestCase):
     def test_without_a_declared_file_nothing_is_written(self):
         self.assertIsNone(activity.activity_file({}))
         activity.touch({})
+
+
+class TestHeartbeat(unittest.TestCase):
+    """The watchdog counts a pod busy while MEDIA_HEARTBEAT_FILE is fresh (krizaka-internal#2101): a model load after
+    `ready`, the GPU still idle, must never reach the idle limit."""
+
+    def _target(self) -> Path:
+        return Path(tempfile.mkdtemp(prefix="orz-hb-")) / "state" / "heartbeat"
+
+    def test_the_beat_starts_at_once_and_repeats_while_the_work_runs(self):
+        target = self._target()
+        env = {"MEDIA_HEARTBEAT_FILE": str(target)}
+        with activity.beating(env, every=0.05):
+            self.assertTrue(target.exists())
+            os.utime(target, (0, 0))
+            deadline = time.time() + 2
+            while target.stat().st_mtime == 0 and time.time() < deadline:
+                time.sleep(0.02)
+            self.assertGreater(target.stat().st_mtime, 0, "the file is touched again while the work runs")
+
+    def test_the_beat_stops_when_the_work_ends_even_on_failure(self):
+        target = self._target()
+        env = {"MEDIA_HEARTBEAT_FILE": str(target)}
+        with self.assertRaises(RuntimeError):
+            with activity.beating(env, every=0.05):
+                raise RuntimeError("the job failed")
+        os.utime(target, (0, 0))
+        time.sleep(0.2)
+        self.assertEqual(0, target.stat().st_mtime, "no beat after the work: an idle pod must look idle")
+        self.assertFalse([t for t in threading.enumerate() if t.name == "media-heartbeat"])
+
+    def test_without_a_declared_file_nothing_beats(self):
+        self.assertIsNone(activity.heartbeat_file({}))
+        with activity.beating({}, every=0.05):
+            self.assertFalse([t for t in threading.enumerate() if t.name == "media-heartbeat"])
+
+    def test_a_job_beats_from_its_first_moment_to_its_acknowledgement(self):
+        from app import consumer  # noqa: PLC0415
+
+        target = self._target()
+        seen = []
+
+        def fake_generate(job):
+            seen.append(target.exists())
+            return {"url": "u"}, {}
+
+        channel, method = MagicMock(), MagicMock(routing_key="media.video", delivery_tag=1)
+        body = json.dumps({"jobId": "hb-job", "userId": "u", "payload": {"prompt": "x"}}).encode()
+        with patch.dict(os.environ, {"MEDIA_HEARTBEAT_FILE": str(target)}), \
+                patch.object(consumer, "_generate", side_effect=fake_generate), patch.object(consumer, "send_job_done"), \
+                patch.object(consumer, "send_progress_update"):
+            consumer._on_message(channel, method, None, body)
+        self.assertEqual([True], seen, "the heartbeat is fresh while the job runs")
+        self.assertFalse([t for t in threading.enumerate() if t.name == "media-heartbeat"])
+
+    def test_a_model_load_beats(self):
+        from app import wan_generator  # noqa: PLC0415
+
+        target = self._target()
+        seen = []
+        model = MagicMock(pipeline="ltx")
+        with patch.dict(os.environ, {"MEDIA_HEARTBEAT_FILE": str(target)}), \
+                patch.object(wan_generator, "_load_ltx", side_effect=lambda m: seen.append(target.exists()) or "pipe"):
+            self.assertEqual("pipe", wan_generator._load(model))
+        self.assertEqual([True], seen, "the heartbeat is fresh while the weights load")
 
 
 if __name__ == "__main__":
