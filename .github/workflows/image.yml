@@ -13,6 +13,8 @@ on:
     paths:
       - Dockerfile.cuda
       - requirements-cuda.txt
+      - requirements-cuda.in
+      - requirements-cuda.lock
       - models.yaml
       - app/**
       - .github/workflows/image.yml
