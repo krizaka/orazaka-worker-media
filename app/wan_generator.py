@@ -105,13 +105,9 @@ def _staged_source(model: VideoModel, progress=None):
         return None
 
 
+# Reading the weights leaves the GPU idle: the heartbeat says the pod is busy for the whole load (Wan and LTX).
+@activity.beats
 def _load(model: VideoModel, from_image: bool = False, weights_progress=None):
-    """Loads one pipeline (Wan or LTX) while the heartbeat says the pod is busy: reading the weights leaves the GPU idle."""
-    with activity.beating():
-        return _load_resident(model, from_image, weights_progress)
-
-
-def _load_resident(model: VideoModel, from_image: bool = False, weights_progress=None):
     """Loads one Wan pipeline from the local cache, evicting whichever was resident.
 
     ``from_image`` loads the image-to-video class. For Wan 2.2 TI2V 5B the same weights serve both: the

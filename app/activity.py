@@ -19,7 +19,10 @@ import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+import functools
+from typing import Callable, Iterator, TypeVar
+
+_F = TypeVar("_F", bound=Callable)
 
 #: Well inside the watchdog's 180 s horizon: two beats may be missed before the pod looks idle.
 HEARTBEAT_EVERY_SECONDS = 30.0
@@ -94,3 +97,15 @@ def beating(env: dict | None = None, every: float = HEARTBEAT_EVERY_SECONDS) -> 
         yield
     finally:
         heartbeat.stop()
+
+
+def beats(function: _F) -> _F:
+    """Decorator: the heartbeat runs for every call of ``function`` (a model load)."""
+
+    @functools.wraps(function)
+    def beating_call(*args, **kwargs):
+        with beating():
+            return function(*args, **kwargs)
+
+    return beating_call  # type: ignore[return-value]
+
