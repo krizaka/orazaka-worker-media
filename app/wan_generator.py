@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from app import job_control, model_cache
+from app import activity, job_control, model_cache
 from app.video_models import (
     InvalidVideoRequest,
     VideoModel,
@@ -106,6 +106,12 @@ def _staged_source(model: VideoModel, progress=None):
 
 
 def _load(model: VideoModel, from_image: bool = False, weights_progress=None):
+    """Loads one pipeline (Wan or LTX) while the heartbeat says the pod is busy: reading the weights leaves the GPU idle."""
+    with activity.beating():
+        return _load_resident(model, from_image, weights_progress)
+
+
+def _load_resident(model: VideoModel, from_image: bool = False, weights_progress=None):
     """Loads one Wan pipeline from the local cache, evicting whichever was resident.
 
     ``from_image`` loads the image-to-video class. For Wan 2.2 TI2V 5B the same weights serve both: the
