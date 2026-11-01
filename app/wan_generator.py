@@ -180,9 +180,12 @@ def _load(model: VideoModel, from_image: bool = False, weights_progress=None):
     if hasattr(pipe.vae, "enable_tiling"):
         pipe.vae.enable_tiling()
     loaded = time.time() - started
-    stage_note = (
-        " (staged on NVMe)" if staged else (" (prefetched)" if os.environ.get("MEDIA_MODELS_PREFETCH") == "1" else "")
-    )
+    if staged:
+        stage_note = " (staged on NVMe)"
+    elif os.environ.get("MEDIA_MODELS_PREFETCH") == "1":
+        stage_note = " (prefetched)"
+    else:
+        stage_note = ""
     print(f"[wan] {model.name} loaded in {loaded:.1f}s{stage_note}, {placement}", flush=True)
     _pipe = pipe
     _pipe_name = _resident_name(model, from_image)

@@ -73,6 +73,7 @@ MODEL_MEMORY_GB: Dict[str, int] = {
     "wan2.2-t2v-a14b": 64,  # two bf16 experts (~57 GB) + the text encoder, offloaded
     "wan2.2-i2v-a14b": 64,  # the same two experts, image to video
 }
+_JSON = "application/json"
 _DEFAULT_MODEL_GB = 12  # conservative estimate for unregistered models
 
 # Serialize heavy media work: at most one model resident / one inference at a time.
@@ -429,7 +430,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
             print(f"Error during remote video generation: {failure}", flush=True)
             status, content = 500, str(failure).encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", _JSON)
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
@@ -437,7 +438,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/":
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", _JSON)
             self.end_headers()
             self.wfile.write(json.dumps({"status": "running"}).encode("utf-8"))
         else:
@@ -459,7 +460,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
         model_name = payload.get("model") or video_models.default_model_name()
         if model_name not in MODEL_REGISTRY:
             self.send_response(400)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", _JSON)
             self.end_headers()
             self.wfile.write(json.dumps({"error": f"Model '{model_name}' is not registered."}).encode("utf-8"))
             return
@@ -468,7 +469,7 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
             upscale.requested(payload)  # a value nobody can make is refused before a GPU second is spent
         except video_models.InvalidVideoRequest as bad:
             self.send_response(400)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", _JSON)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(bad)}).encode("utf-8"))
             return
@@ -688,20 +689,20 @@ class VideoInferenceHandler(BaseHTTPRequestHandler):
 
             body = json.dumps(response_data)
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", _JSON)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body.encode("utf-8"))
         except job_control.JobCancelled as stopped:
             print(f"Video generation stopped: {stopped}", flush=True)
             self.send_response(CANCELLED_STATUS)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", _JSON)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(stopped)}).encode("utf-8"))
         except video_models.InvalidVideoRequest as bad:
             print(f"Refused video request: {bad}", flush=True)
             self.send_response(400)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", _JSON)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(bad)}).encode("utf-8"))
         except Exception as e:
