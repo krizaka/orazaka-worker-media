@@ -1,5 +1,5 @@
 # Inputs of requirements-cuda.lock (hash-locked, Sonar S8544): torch and pip are pinned here, the rest in requirements-cuda.txt.
 # Regenerate: uv pip compile requirements-cuda.in --generate-hashes --python-version 3.12 --python-platform x86_64-manylinux_2_28 --index-strategy unsafe-best-match --extra-index-url https://download.pytorch.org/whl/cu128 --emit-index-url -o requirements-cuda.lock
 -r requirements-cuda.txt
-pip==26.1.1
-torch==2.11.0
+pip==26.2.2
+torch==2.14.1
