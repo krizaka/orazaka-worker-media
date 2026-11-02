@@ -41,6 +41,7 @@ from app import (
     asset_sink,
     broker,
     envelope,
+    gpu_out,
     job_control,
     main,
     sound,
@@ -224,6 +225,8 @@ def _store(path: str, job: dict, filename: str, content_type: str, local_url: st
         _seal(path)
         return local_url
     try:
+        # The pod's own zone first: it outlives the tunnel and the pod (krizaka-internal#2149).
+        gpu_out.put(path, job, filename, content_type)
         return asset_sink.upload(path, job, filename, content_type)
     finally:
         try:
@@ -763,6 +766,8 @@ def _on_message(channel, method, properties, body) -> None:
     job_id = None
     hold_id = None
     activity.touch()
+    # The whole job, model load included, keeps the pod busy for the watchdog: a load after `ready` leaves the GPU idle.
+    heartbeat = activity.Heartbeat().start()
     try:
         job = json.loads(body.decode("utf-8"))
         job_id = job.get("jobId")
@@ -823,6 +828,7 @@ def _on_message(channel, method, properties, body) -> None:
             # hold is carried so billing releases it.
             send_job_error(job_id, str(e), hold_id=hold_id, cause=EXECUTOR_FAULT)
     finally:
+        heartbeat.stop()
         stages.release(job_id)
         activity.touch()
         # Acked from the connection's own thread (BlockingConnection is not thread-safe); a connection that is
