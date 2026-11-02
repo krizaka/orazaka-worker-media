@@ -42,6 +42,7 @@ from app import (
     asset_sink,
     broker,
     envelope,
+    gpu_out,
     job_control,
     main,
     sound,
@@ -225,6 +226,8 @@ def _store(path: str, job: dict, filename: str, content_type: str, local_url: st
         _seal(path)
         return local_url
     try:
+        # The pod's own zone first: it outlives the tunnel and the pod (krizaka-internal#2149).
+        gpu_out.put(path, job, filename, content_type)
         return asset_sink.upload(path, job, filename, content_type)
     finally:
         try:
