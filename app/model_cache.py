@@ -10,6 +10,7 @@ or an sd-server folder). Beside its files, ``.manifest.json`` records the size a
 * ``resolve`` is what a loader calls: the staged copy when a stage dir is set and writable, else the source, never an error;
 * ``prefetch`` reads the files with parallel readers into the page cache, so ``from_pretrained``'s mmap then runs at RAM speed.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -35,7 +36,11 @@ def local_snapshot(repo: str, revision: str, cache_dir: str | None = None) -> Pa
     Raises:
         FileNotFoundError: the snapshot is not under the cache.
     """
-    root = Path(cache_dir or os.environ.get("HF_HUB_CACHE") or Path(os.environ.get("HF_HOME", "~/.cache/huggingface")).expanduser() / "hub")
+    root = Path(
+        cache_dir
+        or os.environ.get("HF_HUB_CACHE")
+        or Path(os.environ.get("HF_HOME", "~/.cache/huggingface")).expanduser() / "hub"
+    )
     snapshot = root / ("models--" + repo.replace("/", "--")) / "snapshots" / revision
     if not snapshot.is_dir():
         raise FileNotFoundError(f"{repo}@{revision} is not under {root}")

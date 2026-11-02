@@ -9,6 +9,7 @@ service must still consume — the registry is an availability signal, not an
 authorisation. Every call here fails soft and retries in the background; getting
 this backwards turns an observability feature into an outage.
 """
+
 import base64
 import hashlib
 import hmac
@@ -152,8 +153,6 @@ def start_background_registration(declaration: dict) -> threading.Thread:
     Returns:
         The started thread.
     """
-    thread = threading.Thread(
-        target=register_forever, args=(declaration,), daemon=True, name="worker-registry"
-    )
+    thread = threading.Thread(target=register_forever, args=(declaration,), daemon=True, name="worker-registry")
     thread.start()
     return thread

@@ -1,4 +1,5 @@
 """The Krizaka cinematic kit, as worker defaults: what a starting image costs the frame, and the negatives every Wan clip carries (no GPU)."""
+
 from __future__ import annotations
 
 import unittest

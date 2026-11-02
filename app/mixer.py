@@ -14,6 +14,7 @@ A film is mixed in stems instead:
 
 ffmpeg does the signal work; the decisions (gains, envelopes, graphs) are pure and tested without it.
 """
+
 from __future__ import annotations
 
 import json
@@ -91,11 +92,14 @@ def music_graph(cues: list[Cue], seconds: float, first_input: int) -> tuple[str,
         parts.append(
             f"[{first_input + k}:a]aformat=sample_fmts=fltp:sample_rates={RATE}:channel_layouts=stereo,atrim=0:{length:.3f},"
             f"asetpts=PTS-STARTPTS,volume={cue_gain(c.intensity)}dB,afade=t=in:st=0:d={fade_in:.2f},"
-            f"afade=t=out:st={max(0.0, length - fade_out):.3f}:d={fade_out:.2f},adelay={delay}|{delay}[c{k}]")
+            f"afade=t=out:st={max(0.0, length - fade_out):.3f}:d={fade_out:.2f},adelay={delay}|{delay}[c{k}]"
+        )
         files.append(c.path)
     labels = "".join(f"[c{k}]" for k in range(len(ordered)))
-    parts.append(f"{labels}amix=inputs={len(ordered)}:normalize=0:duration=longest,apad=whole_dur={seconds:.3f},"
-                 f"atrim=0:{seconds:.3f}[music]")
+    parts.append(
+        f"{labels}amix=inputs={len(ordered)}:normalize=0:duration=longest,apad=whole_dur={seconds:.3f},"
+        f"atrim=0:{seconds:.3f}[music]"
+    )
     return ";".join(parts), files
 
 
@@ -106,15 +110,21 @@ def voice_graph(lines: list[Line], seconds: float, first_input: int) -> tuple[st
     parts, files = [], []
     for k, line in enumerate(lines):
         ms = int(line.at * 1000)
-        parts.append(f"[{first_input + k}:a]aformat=sample_fmts=fltp:sample_rates={RATE}:channel_layouts=stereo,"
-                     f"highpass=f=80,acompressor=threshold=0.125:ratio=2.5:attack=8:release=120,adelay={ms}|{ms}[v{k}]")
+        parts.append(
+            f"[{first_input + k}:a]aformat=sample_fmts=fltp:sample_rates={RATE}:channel_layouts=stereo,"
+            f"highpass=f=80,acompressor=threshold=0.125:ratio=2.5:attack=8:release=120,adelay={ms}|{ms}[v{k}]"
+        )
         files.append(line.path)
     labels = "".join(f"[v{k}]" for k in range(len(lines)))
-    parts.append(f"{labels}amix=inputs={len(lines)}:normalize=0,apad=whole_dur={seconds:.3f},atrim=0:{seconds:.3f},"
-                 # Room tone: short early reflections (a small room, not a hall) mixed low under the dry voice.
-                 f"aecho=0.9:0.35:23|37|53:0.18|0.12|0.08,volume={VOICE_DB}dB[voice_dry]")
-    parts.append(f"anoisesrc=r={RATE}:c=brown:a=1,lowpass=f=300,volume={ROOM_TONE_DB}dB,aformat=channel_layouts=stereo,"
-                 f"atrim=0:{seconds:.3f}[room]")
+    parts.append(
+        f"{labels}amix=inputs={len(lines)}:normalize=0,apad=whole_dur={seconds:.3f},atrim=0:{seconds:.3f},"
+        # Room tone: short early reflections (a small room, not a hall) mixed low under the dry voice.
+        f"aecho=0.9:0.35:23|37|53:0.18|0.12|0.08,volume={VOICE_DB}dB[voice_dry]"
+    )
+    parts.append(
+        f"anoisesrc=r={RATE}:c=brown:a=1,lowpass=f=300,volume={ROOM_TONE_DB}dB,aformat=channel_layouts=stereo,"
+        f"atrim=0:{seconds:.3f}[room]"
+    )
     parts.append("[voice_dry][room]amix=inputs=2:normalize=0:duration=first[voice]")
     return ";".join(parts), files
 
@@ -130,13 +140,19 @@ def mix_graph(cues: list[Cue], lines: list[Line], foley: str | None, seconds: fl
     parts.append(graph)
     files += used
     parts.append("[voice]asplit=3[vmain][vkey1][vkey2]")
-    parts.append(f"[music][vkey1]sidechaincompress=threshold={DUCK_THRESHOLD}:ratio={DUCK_RATIO}:attack={DUCK_ATTACK_MS}"
-                 f":release={DUCK_RELEASE_MS}:makeup=1[ducked]")
+    parts.append(
+        f"[music][vkey1]sidechaincompress=threshold={DUCK_THRESHOLD}:ratio={DUCK_RATIO}:attack={DUCK_ATTACK_MS}"
+        f":release={DUCK_RELEASE_MS}:makeup=1[ducked]"
+    )
     if foley:
-        parts.append(f"[{len(files)}:a]aformat=sample_fmts=fltp:sample_rates={RATE}:channel_layouts=stereo,apad=whole_dur={seconds:.3f},"
-                     f"atrim=0:{seconds:.3f},volume={FOLEY_DB}dB[fx]")
+        parts.append(
+            f"[{len(files)}:a]aformat=sample_fmts=fltp:sample_rates={RATE}:channel_layouts=stereo,apad=whole_dur={seconds:.3f},"
+            f"atrim=0:{seconds:.3f},volume={FOLEY_DB}dB[fx]"
+        )
         files.append(foley)
-        parts.append(f"[fx][vkey2]sidechaincompress=threshold={DUCK_THRESHOLD}:ratio={FOLEY_DUCK_RATIO}:attack=40:release=600[fxd]")
+        parts.append(
+            f"[fx][vkey2]sidechaincompress=threshold={DUCK_THRESHOLD}:ratio={FOLEY_DUCK_RATIO}:attack=40:release=600[fxd]"
+        )
         parts.append("[ducked][fxd][vmain]amix=inputs=3:normalize=0[mix]")
     else:
         parts.append("[vkey2]anullsink")
@@ -149,14 +165,22 @@ _R128 = re.compile(r"I:\s+(-?[\d.]+) LUFS.*?LRA:\s+([\d.]+) LU.*?Peak:\s+(-?[\d.
 
 def measure(path: str, ffmpeg: str = "ffmpeg") -> dict:
     """Integrated loudness (LUFS), loudness range (LU) and true peak (dBTP, 4x oversampled) of a file's audio."""
-    err = subprocess.run([ffmpeg, "-hide_banner", "-nostats", "-i", path, "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"],
-                         capture_output=True, text=True, check=True).stderr
-    summary = err[err.rfind("Summary:"):]
+    err = subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostats", "-i", path, "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stderr
+    summary = err[err.rfind("Summary:") :]
     found = _R128.search(summary)
     if not found:
         raise MixError("ebur128 printed no summary")
     peak = found.group(3)
-    return {"lufs": float(found.group(1)), "lra": float(found.group(2)), "truePeak": -120.0 if "inf" in peak else float(peak)}
+    return {
+        "lufs": float(found.group(1)),
+        "lra": float(found.group(2)),
+        "truePeak": -120.0 if "inf" in peak else float(peak),
+    }
 
 
 def master_gain(measured_lufs: float) -> float:
@@ -169,7 +193,9 @@ def within_contract(m: dict) -> bool:
     return abs(m["lufs"] - TARGET_LUFS) <= TOLERANCE_LU and m["truePeak"] <= TRUE_PEAK_DBTP
 
 
-def master(cues: list[Cue], lines: list[Line], foley: str | None, seconds: float, output: str, ffmpeg: str = "ffmpeg") -> dict:
+def master(
+    cues: list[Cue], lines: list[Line], foley: str | None, seconds: float, output: str, ffmpeg: str = "ffmpeg"
+) -> dict:
     """Mixes and masters to ``output`` (wav or m4a): the stems summed, gained to -14 LUFS, true-peak limited; measured
     after, and refused if outside the contract. Returns the measurement and the gains used."""
     graph, files = mix_graph(cues, lines, foley, seconds)
@@ -177,8 +203,12 @@ def master(cues: list[Cue], lines: list[Line], foley: str | None, seconds: float
     command = [ffmpeg, "-v", "error", "-y"]
     for f in files:
         command += ["-i", f]
-    subprocess.run(command + ["-filter_complex", graph, "-map", "[mix]", "-ar", str(RATE), "-c:a", "pcm_f32le", staging],
-                   check=True, capture_output=True, text=True)
+    subprocess.run(
+        command + ["-filter_complex", graph, "-map", "[mix]", "-ar", str(RATE), "-c:a", "pcm_f32le", staging],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     first = measure(staging, ffmpeg)
     gain = master_gain(first["lufs"])
     ceiling = 10 ** (LIMIT_CEILING_DBTP / 20)
@@ -187,10 +217,17 @@ def master(cues: list[Cue], lines: list[Line], foley: str | None, seconds: float
     while attempts < 3:
         attempts += 1
         # The limiter takes back a little loudness on peaky mixes: measure, then nudge the gain by what was lost.
-        chain = (f"volume={gain}dB,aresample={RATE * 4},alimiter=limit={ceiling:.4f}:attack=2:release=60:level=disabled,"
-                 f"aresample={RATE}")
+        chain = (
+            f"volume={gain}dB,aresample={RATE * 4},alimiter=limit={ceiling:.4f}:attack=2:release=60:level=disabled,"
+            f"aresample={RATE}"
+        )
         codec = ["-c:a", "aac", "-b:a", "256k"] if output.endswith((".m4a", ".mp4")) else ["-c:a", "pcm_s24le"]
-        subprocess.run([ffmpeg, "-v", "error", "-y", "-i", staging, "-af", chain, *codec, output], check=True, capture_output=True, text=True)
+        subprocess.run(
+            [ffmpeg, "-v", "error", "-y", "-i", staging, "-af", chain, *codec, output],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         final = measure(output, ffmpeg)
         if within_contract(final):
             break

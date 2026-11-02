@@ -5,6 +5,7 @@ each file under its role's flag, then the recipe's own sampling defaults. Reques
 size, steps, seed and negative prompt (ADR-075). On a card that must share its memory with a video
 model, ``MEDIA_IMAGE_OFFLOAD=true`` keeps the weights in RAM until a request needs them.
 """
+
 from __future__ import annotations
 
 import os
@@ -36,11 +37,16 @@ def args(name: str, models_dir: Path, port: int, env: dict | None = None, manife
     for spec in recipe["files"]:
         line += [_FLAG[spec["role"]], str(models_dir / "sd" / spec["path"])]
     line += [
-        "--steps", str(launch["steps"]),
-        "--cfg-scale", str(launch["cfgScale"]),
-        "-W", str(launch["width"]),
-        "-H", str(launch["height"]),
-        "--seed", "-1",
+        "--steps",
+        str(launch["steps"]),
+        "--cfg-scale",
+        str(launch["cfgScale"]),
+        "-W",
+        str(launch["width"]),
+        "-H",
+        str(launch["height"]),
+        "--seed",
+        "-1",
         *launch.get("flags", []),
     ]
     if (source.get("MEDIA_IMAGE_OFFLOAD") or "").lower() == "true":

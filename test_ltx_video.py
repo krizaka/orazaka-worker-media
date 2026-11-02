@@ -1,4 +1,5 @@
 """LTX-Video 0.9.8 13B distilled: a model of the catalogue that makes a 5 s clip in seconds, from a still or from text (no GPU)."""
+
 from __future__ import annotations
 
 import sys
@@ -71,9 +72,12 @@ class TestScratchCache(unittest.TestCase):
         fake = types.SimpleNamespace(LTXConditionPipeline=MagicMock())
         torch = MagicMock()
         torch.cuda.is_available.return_value = False
-        with patch.dict(sys.modules, {"diffusers": fake}), patch.object(wan_generator, "_torch", return_value=torch), patch.object(
-            wan_generator, "_device", return_value="cpu"
-        ), patch.object(wan_generator, "hub_cache", return_value="/var/lib/orazaka-scratch/hf/hub"):
+        with (
+            patch.dict(sys.modules, {"diffusers": fake}),
+            patch.object(wan_generator, "_torch", return_value=torch),
+            patch.object(wan_generator, "_device", return_value="cpu"),
+            patch.object(wan_generator, "hub_cache", return_value="/var/lib/orazaka-scratch/hf/hub"),
+        ):
             wan_generator._pipe = None
             wan_generator._load(video_models.find(NAME), False)
         wan_generator._pipe = None
@@ -114,9 +118,12 @@ class TestGenerate(unittest.TestCase):
         }
         torch = MagicMock()
         torch.Generator.return_value.manual_seed.return_value = "generator"
-        with patch.dict(sys.modules, modules), patch.object(wan_generator, "_torch", return_value=torch), patch.object(
-            wan_generator, "_pipe", pipe
-        ), patch.object(wan_generator, "_pipe_name", NAME):
+        with (
+            patch.dict(sys.modules, modules),
+            patch.object(wan_generator, "_torch", return_value=torch),
+            patch.object(wan_generator, "_pipe", pipe),
+            patch.object(wan_generator, "_pipe_name", NAME),
+        ):
             out = wan_generator.generate_wan_frames(NAME, "slow dolly-in", 1216, 704, 121, 8, 7, image=image)
         return out, pipe, fake_ltx
 
@@ -124,7 +131,16 @@ class TestGenerate(unittest.TestCase):
         out, pipe, fake_ltx = self._run(Image.new("RGB", (1360, 768)))
         self.assertEqual(121, len(out))
         kwargs = pipe.call_args.kwargs
-        self.assertEqual((1216, 704, 121, 8, 1.0), (kwargs["width"], kwargs["height"], kwargs["num_frames"], kwargs["num_inference_steps"], kwargs["guidance_scale"]))
+        self.assertEqual(
+            (1216, 704, 121, 8, 1.0),
+            (
+                kwargs["width"],
+                kwargs["height"],
+                kwargs["num_frames"],
+                kwargs["num_inference_steps"],
+                kwargs["guidance_scale"],
+            ),
+        )
         self.assertEqual("slow dolly-in", kwargs["prompt"])
         self.assertIn("morphing", kwargs["negative_prompt"])  # the kit's default negatives
         self.assertEqual("pil", kwargs["output_type"])

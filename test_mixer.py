@@ -1,5 +1,6 @@
 """The film mix (app/mixer.py, orazaka#289): cue levels follow the story, the score ducks under the voice, the master
 lands on -14 LUFS ± 0.5 with a true peak at or under -1 dBTP — measured, not assumed."""
+
 from __future__ import annotations
 
 import os
@@ -23,17 +24,23 @@ class TestTheDecisionsArePure(unittest.TestCase):
         self.assertEqual(files, ["a.wav", "b.wav"])
         self.assertIn(f"volume={mixer.cue_gain(0.3)}dB", graph)
         self.assertIn("adelay=9250|9250", graph)  # the second cue starts half a crossfade early
-        self.assertIn("afade=t=out:st=7.750:d=3.00", graph)  # the last cue resolves over its last 3 s, ending on the film's end
+        self.assertIn(
+            "afade=t=out:st=7.750:d=3.00", graph
+        )  # the last cue resolves over its last 3 s, ending on the film's end
         self.assertTrue(graph.endswith("[music]"))
 
     def test_a_hard_genre_switch_crossfades_short_on_the_cut(self):
-        graph, _ = mixer.music_graph([mixer.Cue("soft.wav", 0, 6, 0.3), mixer.Cue("hiphop.wav", 6, 12, 0.6, fade=0.3)], 12.0, 0)
+        graph, _ = mixer.music_graph(
+            [mixer.Cue("soft.wav", 0, 6, 0.3), mixer.Cue("hiphop.wav", 6, 12, 0.6, fade=0.3)], 12.0, 0
+        )
         self.assertIn("adelay=5850|5850", graph)  # the hip-hop cue starts 0.15 s before the cut
         self.assertIn("afade=t=in:st=0:d=0.30", graph)
         self.assertIn("afade=t=out:st=5.850:d=0.30", graph)  # the soft cue leaves as fast
 
     def test_the_voice_keys_the_duck_and_gets_room(self):
-        graph, files = mixer.mix_graph([mixer.Cue("m.wav", 0, 8, 0.5)], [mixer.Line("v0.wav", 1.2), mixer.Line("v1.wav", 4)], "fx.wav", 8)
+        graph, files = mixer.mix_graph(
+            [mixer.Cue("m.wav", 0, 8, 0.5)], [mixer.Line("v0.wav", 1.2), mixer.Line("v1.wav", 4)], "fx.wav", 8
+        )
         self.assertEqual(files, ["m.wav", "v0.wav", "v1.wav", "fx.wav"])
         self.assertIn("[music][vkey1]sidechaincompress", graph)
         self.assertIn("[fx][vkey2]sidechaincompress", graph)
@@ -66,7 +73,10 @@ class TestTheMasterIsMeasured(unittest.TestCase):
 
     def _make(self, name: str, source: str, seconds: float) -> str:
         path = os.path.join(self.dir, name)
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", source, "-t", str(seconds), "-ar", "48000", path], check=True)
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", source, "-t", str(seconds), "-ar", "48000", path],
+            check=True,
+        )
         return path
 
     def test_a_loud_score_and_a_voice_master_to_minus_14_lufs_under_minus_1_dbtp(self):
@@ -74,7 +84,9 @@ class TestTheMasterIsMeasured(unittest.TestCase):
         voice = self._make("voice.wav", "anoisesrc=c=pink:a=0.5,bandpass=f=1000:w=800", 2.5)
         fx = self._make("fx.wav", "anoisesrc=c=brown:a=0.3", 8)
         out = os.path.join(self.dir, "master.wav")
-        facts = mixer.master([mixer.Cue(loud, 0, 4, 0.3), mixer.Cue(loud, 4, 8, 0.7)], [mixer.Line(voice, 2.0)], fx, 8, out)
+        facts = mixer.master(
+            [mixer.Cue(loud, 0, 4, 0.3), mixer.Cue(loud, 4, 8, 0.7)], [mixer.Line(voice, 2.0)], fx, 8, out
+        )
         self.assertTrue(mixer.within_contract(facts["master"]), facts)
         self.assertEqual(mixer.measure(out), facts["master"])
 
@@ -91,8 +103,25 @@ class TestTheMasterIsMeasured(unittest.TestCase):
         subprocess.run(cmd + ["-filter_complex", graph, "-map", "[ducked]", ducked], check=True)
 
         def rms(start: float) -> float:
-            err = subprocess.run(["ffmpeg", "-hide_banner", "-ss", str(start), "-t", "1", "-i", ducked, "-af", "astats=metadata=0",
-                                  "-f", "null", "-"], capture_output=True, text=True).stderr
+            err = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-ss",
+                    str(start),
+                    "-t",
+                    "1",
+                    "-i",
+                    ducked,
+                    "-af",
+                    "astats=metadata=0",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                capture_output=True,
+                text=True,
+            ).stderr
             return float(err.split("RMS level dB:")[-1].split()[0])
 
         self.assertGreater(rms(1.0) - rms(3.8), 3.0)  # at least 3 dB down under the voice

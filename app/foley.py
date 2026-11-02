@@ -14,17 +14,58 @@ deterministic for a seed so a film is made again identically.
 crossfaded, that the mix (``app/mixer.py``) puts under the voice and the music. :func:`coverage` says which shots have
 a sound of their own, the gate's « foley coverage ».
 """
+
 from __future__ import annotations
 
 import numpy as np
 
 RATE = 48000
 
-BEDS = ("rain", "storm", "wind", "wind-soft", "lake", "waves", "drizzle", "room", "dawn", "city", "rain-window", "drips",
-        "tunnel", "crowd", "neon")
-EVENTS = ("thunder", "gust", "flap", "whoosh", "steps", "rustle", "shake", "paper", "block", "hum", "ignite", "chime", "call",
-          "chirp", "splash", "splash-small", "coin", "parcel", "tap", "swell",
-          "train", "skate", "sparks", "impact", "slide", "riser")
+BEDS = (
+    "rain",
+    "storm",
+    "wind",
+    "wind-soft",
+    "lake",
+    "waves",
+    "drizzle",
+    "room",
+    "dawn",
+    "city",
+    "rain-window",
+    "drips",
+    "tunnel",
+    "crowd",
+    "neon",
+)
+EVENTS = (
+    "thunder",
+    "gust",
+    "flap",
+    "whoosh",
+    "steps",
+    "rustle",
+    "shake",
+    "paper",
+    "block",
+    "hum",
+    "ignite",
+    "chime",
+    "call",
+    "chirp",
+    "splash",
+    "splash-small",
+    "coin",
+    "parcel",
+    "tap",
+    "swell",
+    "train",
+    "skate",
+    "sparks",
+    "impact",
+    "slide",
+    "riser",
+)
 KINDS = BEDS + EVENTS
 
 #: Beds fade in and out over this many seconds at their shot's edges (a cut is not a click).
@@ -73,7 +114,7 @@ def _drops(rng: np.random.Generator, n: int, per_second: float, low: float, high
         at = rng.integers(0, max(1, n - length))
         f = rng.uniform(low, high)
         drop = np.sin(2 * np.pi * f * t * (1 + 0.15 * np.exp(-t / decay))) * np.exp(-t / decay) * rng.uniform(0.2, 1.0)
-        out[at:at + length] += drop.astype(np.float32)
+        out[at : at + length] += drop.astype(np.float32)
     return out / (np.max(np.abs(out)) + 1e-9)
 
 
@@ -89,7 +130,9 @@ def _chirps(rng: np.random.Generator, n: int, count: int, base: float) -> np.nda
         f0 = base * rng.uniform(0.8, 1.4)
         sweep = f0 * (1 + rng.uniform(-0.35, 0.5) * t / t[-1]) + 120 * np.sin(2 * np.pi * rng.uniform(25, 45) * t)
         phase = 2 * np.pi * np.cumsum(sweep) / RATE
-        out[at:at + length] += (np.sin(phase) * np.sin(np.pi * t / t[-1]) ** 2 * rng.uniform(0.3, 1)).astype(np.float32)
+        out[at : at + length] += (np.sin(phase) * np.sin(np.pi * t / t[-1]) ** 2 * rng.uniform(0.3, 1)).astype(
+            np.float32
+        )
     return out / (np.max(np.abs(out)) + 1e-9)
 
 
@@ -117,7 +160,9 @@ def bed(kind: str, seconds: float, seed: int) -> np.ndarray:
         whistle = shaped(rng, n, 500, 1400) * _lfo(n, 0.23, 0.9, rng) * 0.15
         return out + (whistle if kind == "wind" else 0)
     if kind in ("lake", "waves"):
-        laps = shaped(rng, n, 120, 1800 if kind == "lake" else 2600, -2) * _lfo(n, 0.45 if kind == "lake" else 0.22, 0.85, rng)
+        laps = shaped(rng, n, 120, 1800 if kind == "lake" else 2600, -2) * _lfo(
+            n, 0.45 if kind == "lake" else 0.22, 0.85, rng
+        )
         return laps + _drops(rng, n, 6 if kind == "lake" else 12, 300, 900, 0.02) * 0.15
     if kind == "room":
         return shaped(rng, n, 40, 400, -3) * 0.4
@@ -138,7 +183,9 @@ def bed(kind: str, seconds: float, seed: int) -> np.ndarray:
         t = np.arange(n) / RATE
         buzz = sum(np.sin(2 * np.pi * 120 * h * t) / h for h in (1, 2, 3, 4, 6)).astype(np.float32)
         flick = (rng.random(n) < 0.0004).astype(np.float32)
-        return buzz * 0.3 * _lfo(n, 0.5, 0.2, rng) + np.convolve(flick, np.hanning(200), "same").astype(np.float32) * 0.5
+        return (
+            buzz * 0.3 * _lfo(n, 0.5, 0.2, rng) + np.convolve(flick, np.hanning(200), "same").astype(np.float32) * 0.5
+        )
     raise FoleyError(f"{kind!r} is not a bed")
 
 
@@ -166,7 +213,7 @@ def event(kind: str, seed: int) -> np.ndarray:
         for k in range(6):
             f = _flap(rng, 0.6)[: secs(0.1)] * (1 - k / 7)
             at = secs(0.08 * k)
-            out[at:at + len(f)] += f[: n - at]
+            out[at : at + len(f)] += f[: n - at]
         return out
     if kind in ("whoosh", "swell"):
         n = secs(0.9 if kind == "whoosh" else 2.0)
@@ -178,13 +225,17 @@ def event(kind: str, seed: int) -> np.ndarray:
         for at in (0.0, 0.28):
             m = secs(0.08)
             tap = shaped(rng, m, 120, 2500) * _env(m, 0.002, 0.015)
-            out[secs(at):secs(at) + m] += tap
+            out[secs(at) : secs(at) + m] += tap
         return out
     if kind in ("rustle", "paper"):
         n = secs(0.5 if kind == "rustle" else 0.7)
-        crackle = (rng.random(n) < (0.02 if kind == "paper" else 0.06)).astype(np.float32) * rng.uniform(-1, 1, n).astype(np.float32)
+        crackle = (rng.random(n) < (0.02 if kind == "paper" else 0.06)).astype(np.float32) * rng.uniform(
+            -1, 1, n
+        ).astype(np.float32)
         body = shaped(rng, n, 1200 if kind == "paper" else 900, 9000, -1)
-        return (body * 0.5 + np.convolve(crackle, np.hanning(24), "same")) * np.sin(np.pi * np.arange(n) / n).astype(np.float32)
+        return (body * 0.5 + np.convolve(crackle, np.hanning(24), "same")) * np.sin(np.pi * np.arange(n) / n).astype(
+            np.float32
+        )
     if kind in ("block", "tap", "parcel"):
         n = secs(0.5)
         t = np.arange(n) / RATE
@@ -221,26 +272,30 @@ def event(kind: str, seed: int) -> np.ndarray:
     if kind == "train":  # a train passing: a rumble that swells and falls, wheel clacks, a squeal at its peak
         n = secs(3.0)
         t = np.arange(n) / RATE
-        swell = np.exp(-((t - 1.4) / 0.7) ** 2).astype(np.float32)
+        swell = np.exp(-(((t - 1.4) / 0.7) ** 2)).astype(np.float32)
         body = shaped(rng, n, 30, 900, -2) * swell
         clacks = np.zeros(n, np.float32)
         for at in np.arange(0.4, 2.6, 0.19):
             m = secs(0.04)
-            clacks[secs(at):secs(at) + m] += shaped(rng, m, 200, 2500) * _env(m, 0.001, 0.01)
-        squeal = np.sin(2 * np.pi * (2400 - 300 * t) * t).astype(np.float32) * swell ** 3 * 0.12
+            clacks[secs(at) : secs(at) + m] += shaped(rng, m, 200, 2500) * _env(m, 0.001, 0.01)
+        squeal = np.sin(2 * np.pi * (2400 - 300 * t) * t).astype(np.float32) * swell**3 * 0.12
         return body + clacks * swell + squeal
     if kind == "skate":  # wheels rolling on concrete, then the board's clack
         n = secs(0.9)
         roll = shaped(rng, n, 60, 900, -1) * _env(n, 0.05, 0.4)
         m = secs(0.12)
         clack = np.zeros(n, np.float32)
-        clack[secs(0.7):secs(0.7) + m] = (shaped(rng, m, 300, 4000) * _env(m, 0.001, 0.02))[: n - secs(0.7)]
+        clack[secs(0.7) : secs(0.7) + m] = (shaped(rng, m, 300, 4000) * _env(m, 0.001, 0.02))[: n - secs(0.7)]
         return roll * 0.7 + clack * 1.4
     if kind == "sparks":  # a spray of sparks: bright crackles that thin out
         n = secs(0.8)
-        crackle = (rng.random(n) < 0.03 * np.exp(-np.arange(n) / secs(0.3))).astype(np.float32) * rng.uniform(-1, 1, n).astype(np.float32)
+        crackle = (rng.random(n) < 0.03 * np.exp(-np.arange(n) / secs(0.3))).astype(np.float32) * rng.uniform(
+            -1, 1, n
+        ).astype(np.float32)
         hiss = shaped(rng, n, 3000, 14000, 1) * _env(n, 0.002, 0.15) * 0.4
-        sharp = np.convolve(crackle, np.array([1.0, -0.9], np.float32), "same")  # a differentiator keeps the crackle bright
+        sharp = np.convolve(
+            crackle, np.array([1.0, -0.9], np.float32), "same"
+        )  # a differentiator keeps the crackle bright
         return sharp + hiss
     if kind == "impact":  # a heavy hit: a sub thump falling in pitch and a short crack
         n = secs(1.3)
@@ -287,7 +342,7 @@ def render(cues: list[dict], seconds: float, seed: int = 0) -> np.ndarray:
             length = max(1, int((cue["end"] - cue["start"]) * RATE))
             # A bed that continues across a cut keeps one seed per kind, so it does not jump between shots.
             sig = _normalise(bed(kind, length / RATE + 2 * BED_FADE, seed * 7 + KINDS.index(kind)))
-            sig = sig[int(BED_FADE * RATE) // 2:][:length]
+            sig = sig[int(BED_FADE * RATE) // 2 :][:length]
             fade = min(int(BED_FADE * RATE), len(sig) // 2)
             if fade:
                 sig[:fade] *= np.linspace(0, 1, fade, dtype=np.float32)
@@ -295,7 +350,10 @@ def render(cues: list[dict], seconds: float, seed: int = 0) -> np.ndarray:
             pan = cue.get("pan", 0.0)
             width = 0.35  # a bed is wide: the two sides decorrelated by a few milliseconds
             delay = int(0.011 * RATE)
-            left, right = sig, np.concatenate([np.zeros(delay, np.float32), sig])[: len(sig)]  # same length, even a sliver
+            left, right = (
+                sig,
+                np.concatenate([np.zeros(delay, np.float32), sig])[: len(sig)],
+            )  # same length, even a sliver
             sides = np.stack([left * (1 - width * pan), right * (1 + width * pan)], axis=1)
         else:
             sig = _normalise(event(kind, seed * 131 + k))
@@ -314,7 +372,14 @@ def coverage(shots: list[dict], cues: list[dict]) -> dict:
     for cue in cues:
         by_shot.setdefault(cue["shot"], []).append(cue)
     silent = [s["id"] for s in shots if not by_shot.get(s["id"])]
-    unheard = [s["id"] for s in shots if s.get("characters") and not any(c["kind"] in EVENTS for c in by_shot.get(s["id"], []))]
+    unheard = [
+        s["id"] for s in shots if s.get("characters") and not any(c["kind"] in EVENTS for c in by_shot.get(s["id"], []))
+    ]
     covered = len(shots) - len(silent)
-    return {"shots": len(shots), "covered": covered, "ratio": round(covered / max(1, len(shots)), 3), "silent": silent,
-            "characterShotsUnheard": unheard}
+    return {
+        "shots": len(shots),
+        "covered": covered,
+        "ratio": round(covered / max(1, len(shots)), 3),
+        "silent": silent,
+        "characterShotsUnheard": unheard,
+    }

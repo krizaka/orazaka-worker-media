@@ -1,4 +1,5 @@
 """Cancelling a job on the worker (orazaka-web-client#85): the registry, the routing key, the listener loop."""
+
 from __future__ import annotations
 
 import unittest
@@ -92,11 +93,13 @@ class TestConsumerCancel(unittest.TestCase):
         channel = MagicMock()
         method = MagicMock(delivery_tag=1, routing_key="job.video.generate")
         body = json.dumps({"jobId": job_id, "userId": "u-1", "payload": {"prompt": "x", "holdId": "h-1"}}).encode()
-        with patch.object(consumer, "_generate", **({"side_effect": generate} if generate else {})) as render, patch.object(
-            consumer, "send_job_cancelled"
-        ) as cancelled, patch.object(consumer, "send_job_error") as errored, patch.object(
-            consumer, "send_progress_update"
-        ), patch.object(consumer, "send_job_done") as done:
+        with (
+            patch.object(consumer, "_generate", **({"side_effect": generate} if generate else {})) as render,
+            patch.object(consumer, "send_job_cancelled") as cancelled,
+            patch.object(consumer, "send_job_error") as errored,
+            patch.object(consumer, "send_progress_update"),
+            patch.object(consumer, "send_job_done") as done,
+        ):
             consumer._on_message(channel, method, None, body)
         return render, cancelled, errored, done
 

@@ -1,5 +1,6 @@
 """Film titles and subtitles (app/titles.py, orazaka#289): set inside the safe areas of 16:9 and 9:16, two balanced
 lines at most, timed on the cut, the title pairing faded and tracked; burnt in by libass when ffmpeg has it."""
+
 from __future__ import annotations
 
 import os
@@ -21,19 +22,31 @@ class TestTheScriptIsPure(unittest.TestCase):
     def test_subtitles_sit_high_enough_and_nothing_enters_the_players_top_left_corner(self):
         # orazaka#289 review: v1's subtitles sat too low; the player's watermark sits top-left.
         for frame in (titles.Frame(1920, 1080), titles.Frame(1080, 1920)):
-            ass = titles.script(frame, [titles.Text(0, 4, "The World of Krizaka", "main", sub="Dawn"),
-                                        titles.Text(1, 3, "And when the night is longest… no one flies alone.")])
+            ass = titles.script(
+                frame,
+                [
+                    titles.Text(0, 4, "The World of Krizaka", "main", sub="Dawn"),
+                    titles.Text(1, 3, "And when the night is longest… no one flies alone."),
+                ],
+            )
             sub_margin = int(re.search(r"Style: Sub,(?:[^,]*,){20}(\d+),", ass).group(1))
             self.assertGreaterEqual(sub_margin / frame.height, titles.SUBTITLE_BOTTOM[frame.vertical])
-            for box in titles.boxes(frame, [titles.Text(0, 4, "The World of Krizaka", "main", sub="Dawn"),
-                                            titles.Text(1, 3, "And when the night is longest… no one flies alone.")]):
+            for box in titles.boxes(
+                frame,
+                [
+                    titles.Text(0, 4, "The World of Krizaka", "main", sub="Dawn"),
+                    titles.Text(1, 3, "And when the night is longest… no one flies alone."),
+                ],
+            ):
                 self.assertFalse(titles.overlaps(box, titles.reserved(frame)), (frame, box))
         self.assertGreaterEqual(titles.SUBTITLE_BOTTOM[False], 0.15)
 
     def test_two_balanced_lines_at_most_breaking_after_punctuation(self):
         self.assertEqual(titles.wrap("The pigeon delivers, every time."), ["The pigeon delivers, every time."])
-        self.assertEqual(titles.wrap("And when the night is longest… no one flies alone."),
-                         ["And when the night is longest…", "no one flies alone."])
+        self.assertEqual(
+            titles.wrap("And when the night is longest… no one flies alone."),
+            ["And when the night is longest…", "no one flies alone."],
+        )
         with self.assertRaises(titles.TitleError):
             titles.wrap("word " * 30)
 
@@ -53,8 +66,14 @@ class TestTheScriptIsPure(unittest.TestCase):
             self.assertLessEqual(widest, frame.width - safe["left"] - safe["right"])
 
     def test_the_script_sets_the_pairing_fades_and_tracking(self):
-        ass = titles.script(titles.Frame(1920, 1080), [titles.Text(1, 6, "The World of Krizaka", "main", sub="Dawn"),
-                                                        titles.Text(2, 4, "The falcon keeps watch.")], label="AI-generated")
+        ass = titles.script(
+            titles.Frame(1920, 1080),
+            [
+                titles.Text(1, 6, "The World of Krizaka", "main", sub="Dawn"),
+                titles.Text(2, 4, "The falcon keeps watch."),
+            ],
+            label="AI-generated",
+        )
         self.assertIn(f"Style: Title,{titles.DISPLAY_FACE}", ass)
         self.assertIn(f"Style: Serif,{titles.SERIF_FACE}", ass)
         self.assertIn(f"Style: Sub,{titles.TEXT_FACE}", ass)
@@ -87,14 +106,40 @@ class TestTheTextIsBurntIn(unittest.TestCase):
         try:
             for w, h in ((1920, 1080), (1080, 1920)):
                 src = os.path.join(tmp, f"src-{w}.mp4")
-                subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0x203040:s={w}x{h}:d=3:r=24", src], check=True)
+                subprocess.run(
+                    ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0x203040:s={w}x{h}:d=3:r=24", src],
+                    check=True,
+                )
                 out = os.path.join(tmp, f"out-{w}.mp4")
                 ass = titles.script(titles.Frame(w, h), [titles.Text(0, 3, "The World of Krizaka", "main", sub="Dawn")])
                 facts = titles.render(src, ass, out, FONTS)
                 self.assertEqual((facts["width"], facts["height"]), (w, h))
-                frames = [subprocess.run(["ffmpeg", "-v", "error", "-ss", "2", "-i", p, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt",
-                                          "gray", "-"], capture_output=True, check=True).stdout for p in (src, out)]
-                self.assertGreater(sum(1 for a, b in zip(*frames, strict=False) if abs(a - b) > 40), 500)  # letters on the picture
+                frames = [
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-v",
+                            "error",
+                            "-ss",
+                            "2",
+                            "-i",
+                            p,
+                            "-frames:v",
+                            "1",
+                            "-f",
+                            "rawvideo",
+                            "-pix_fmt",
+                            "gray",
+                            "-",
+                        ],
+                        capture_output=True,
+                        check=True,
+                    ).stdout
+                    for p in (src, out)
+                ]
+                self.assertGreater(
+                    sum(1 for a, b in zip(*frames, strict=False) if abs(a - b) > 40), 500
+                )  # letters on the picture
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

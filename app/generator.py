@@ -45,18 +45,11 @@ def init_pipeline():
     try:
         try:
             pipe = StableVideoDiffusionPipeline.from_pretrained(
-                model_path,
-                torch_dtype=dtype,
-                variant=variant,
-                local_files_only=True
+                model_path, torch_dtype=dtype, variant=variant, local_files_only=True
             )
         except Exception as cache_err:
             print(f"Could not load from local cached files: {cache_err}. Attempting online download...", flush=True)
-            pipe = StableVideoDiffusionPipeline.from_pretrained(
-                model_path,
-                torch_dtype=dtype,
-                variant=variant
-            )
+            pipe = StableVideoDiffusionPipeline.from_pretrained(model_path, torch_dtype=dtype, variant=variant)
 
         # Configure host target device
         if is_mps:
@@ -80,12 +73,9 @@ def init_pipeline():
 # NOTE: SVD is NOT loaded at module import. Call init_pipeline() before use.
 print("SVD pipeline: DEFERRED (lazy-load on first SVD request).", flush=True)
 
+
 def generate_video_frames(
-    input_image: Image.Image,
-    num_frames: int,
-    num_inference_steps: int,
-    generator,
-    progress_callback
+    input_image: Image.Image, num_frames: int, num_inference_steps: int, generator, progress_callback
 ) -> list:
     """Runs video generation using SVD with dynamic memory checks.
 
@@ -106,18 +96,26 @@ def generate_video_frames(
             process_mem_mb = process.memory_info().rss / (1024 * 1024)
             sys_mem = psutil.virtual_memory()
             available_mem_mb = sys_mem.available / (1024 * 1024)
-            print(f"Memory Check: Process RSS = {process_mem_mb:.2f} MB, System Available = {available_mem_mb:.2f} MB", flush=True)
-            
+            print(
+                f"Memory Check: Process RSS = {process_mem_mb:.2f} MB, System Available = {available_mem_mb:.2f} MB",
+                flush=True,
+            )
+
             # Dynamic memory slicing/tiling thresholds
             MEM_SLICING_THRESHOLD_MB = 4000.0
             MEM_AVAIL_WARNING_MB = 2000.0
             SYSTEM_AVAIL_MIN_MB = 1500.0
-            
+
             if available_mem_mb < SYSTEM_AVAIL_MIN_MB:
-                raise RuntimeError(f"System memory exhausted: {available_mem_mb:.0f} MB available (min: {SYSTEM_AVAIL_MIN_MB} MB)")
-                
+                raise RuntimeError(
+                    f"System memory exhausted: {available_mem_mb:.0f} MB available (min: {SYSTEM_AVAIL_MIN_MB} MB)"
+                )
+
             if process_mem_mb > MEM_SLICING_THRESHOLD_MB or available_mem_mb < MEM_AVAIL_WARNING_MB:
-                print("Memory threshold reached. Enabling dynamic VAE slicing, tiling, and attention slicing to prevent OOM.", flush=True)
+                print(
+                    "Memory threshold reached. Enabling dynamic VAE slicing, tiling, and attention slicing to prevent OOM.",
+                    flush=True,
+                )
                 if hasattr(pipe, "enable_vae_slicing"):
                     pipe.enable_vae_slicing()
                 if hasattr(pipe, "enable_vae_tiling"):
@@ -125,26 +123,25 @@ def generate_video_frames(
                 if hasattr(pipe, "enable_attention_slicing"):
                     pipe.enable_attention_slicing()
         except MemoryError as exc:
-            raise RuntimeError(
-                "MemoryError during pre-check. System cannot allocate for video generation."
-            ) from exc
+            raise RuntimeError("MemoryError during pre-check. System cannot allocate for video generation.") from exc
         except Exception as mem_err:
             print(f"Error checking memory: {mem_err}", flush=True)
-            
+
     import traceback
+
     try:
         print(f"Executing SVD pipeline for {num_frames} frames...", flush=True)
         decode_chunk_size = 4 if num_frames >= 4 else 1
         # SVD pipeline call
         svd_frames = pipe(
-            input_image, 
-            decode_chunk_size=decode_chunk_size, 
-            num_frames=num_frames, 
-            num_inference_steps=num_inference_steps, 
+            input_image,
+            decode_chunk_size=decode_chunk_size,
+            num_frames=num_frames,
+            num_inference_steps=num_inference_steps,
             generator=generator,
-            callback_on_step_end=progress_callback
+            callback_on_step_end=progress_callback,
         ).frames[0]
-        
+
         if not svd_frames or len(svd_frames) == 0:
             raise ValueError("SVD output frames are empty")
         return svd_frames
@@ -153,7 +150,7 @@ def generate_video_frames(
         traceback.print_exc()
         # Force garbage collection to free any partially-allocated tensors
         gc.collect()
-        if torch is not None and hasattr(torch, 'mps') and torch.backends.mps.is_available():
+        if torch is not None and hasattr(torch, "mps") and torch.backends.mps.is_available():
             torch.mps.empty_cache()
         elif torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -166,4 +163,3 @@ def generate_video_frames(
                 f"Underlying error: {svd_err}"
             ) from svd_err
         raise RuntimeError(f"SVD inference failed (no fallback): {svd_err}") from svd_err
-

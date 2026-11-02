@@ -11,6 +11,7 @@ asset is readable by its owner), and answers the URL the asset is served under.
 The droplet therefore never holds the platform's master key: what crosses the tunnel is the
 plaintext the worker just made, over TLS, authenticated by a short-lived ``SERVICE`` token.
 """
+
 from __future__ import annotations
 
 import json

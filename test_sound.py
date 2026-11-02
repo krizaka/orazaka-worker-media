@@ -1,4 +1,5 @@
 """The sound step: mux, loudness, ducking, the silent variant kept (orazaka-packs#25). ffmpeg only, no model."""
+
 import subprocess
 
 import pytest
@@ -22,8 +23,15 @@ def clip(tmp_path_factory):
 
 def _tone(d, name, freq, seconds, volume=0.5):
     path = str(d / f"{name}.wav")
-    _ff("-f", "lavfi", "-i", f"sine=frequency={freq}:duration={seconds}:sample_rate=44100", "-af",
-        f"volume={volume}", path)
+    _ff(
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency={freq}:duration={seconds}:sample_rate=44100",
+        "-af",
+        f"volume={volume}",
+        path,
+    )
     return path
 
 
@@ -35,10 +43,14 @@ def test_the_picture_is_copied_not_reencoded_and_aac_is_muxed(clip, tmp_path):
     assert (info["width"], info["height"]) == (320, 240)
     assert abs(info["durationSeconds"] - 4.0) < 0.15
     assert result["tracks"] == ["music"]
+
     # copied bit for bit: the video stream's packets are those of the source
     def pkts(p):
-        return subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                               "packet=size", "-of", "csv=p=0", p], capture_output=True, text=True).stdout
+        return subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=size", "-of", "csv=p=0", p],
+            capture_output=True,
+            text=True,
+        ).stdout
 
     assert pkts(out) == pkts(clip)
 
@@ -76,8 +88,15 @@ def test_the_voice_ducks_the_bed(clip, tmp_path):
     music = _tone(tmp_path, "m", 200, 4, 0.5)
     voice = str(tmp_path / "v.wav")
     # a voice that speaks from 2 s to 4 s, silent before
-    _ff("-f", "lavfi", "-i", "sine=frequency=1000:duration=2:sample_rate=44100", "-af",
-        "volume=0.6,adelay=2000|2000,apad=whole_dur=4", voice)
+    _ff(
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=1000:duration=2:sample_rate=44100",
+        "-af",
+        "volume=0.6,adelay=2000|2000,apad=whole_dur=4",
+        voice,
+    )
     graph, order = sound.mix_graph(Tracks(music=music, voice=voice), 4.0)
     assert "sidechaincompress" in graph and order == ["music", "voice"]
     mixed = str(tmp_path / "mix.wav")
@@ -85,13 +104,29 @@ def test_the_voice_ducks_the_bed(clip, tmp_path):
 
     def band_db(start, end, freq):
         out = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-nostats", "-ss", str(start), "-to", str(end), "-i", mixed, "-af",
-             f"bandpass=f={freq}:width_type=h:w=60,volumedetect", "-f", "null", "-"],
-            capture_output=True, text=True).stderr
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostats",
+                "-ss",
+                str(start),
+                "-to",
+                str(end),
+                "-i",
+                mixed,
+                "-af",
+                f"bandpass=f={freq}:width_type=h:w=60,volumedetect",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+        ).stderr
         return float(out.split("mean_volume:")[1].split("dB")[0])
 
-    before_voice = band_db(0.8, 1.8, 200)   # the bed, alone
-    under_voice = band_db(2.6, 3.8, 200)    # the bed, voice speaking
+    before_voice = band_db(0.8, 1.8, 200)  # the bed, alone
+    under_voice = band_db(2.6, 3.8, 200)  # the bed, voice speaking
     assert before_voice - under_voice >= 8
 
 

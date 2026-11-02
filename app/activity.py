@@ -13,6 +13,7 @@ krizaka-internal#2101).
 
 Unset (``MEDIA_ACTIVITY_FILE`` / ``MEDIA_HEARTBEAT_FILE`` empty, the Mac), nothing is written.
 """
+
 from __future__ import annotations
 
 import os
@@ -108,4 +109,3 @@ def beats(function: _F) -> _F:
             return function(*args, **kwargs)
 
     return beating_call  # type: ignore[return-value]
-

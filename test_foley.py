@@ -1,5 +1,6 @@
 """Foley by synthesis (app/foley.py, orazaka#289): every sound of the list is made, finite, bounded and deterministic,
 laid where the timeline says, and the coverage says which shots are silent or whose action is not heard."""
+
 from __future__ import annotations
 
 import unittest
@@ -29,11 +30,13 @@ class TestEverySoundIsMade(unittest.TestCase):
             self.assertIn(kind, foley.BEDS)
         for kind in ("train", "skate", "sparks", "impact", "slide", "riser"):
             self.assertIn(kind, foley.EVENTS)
+
         # An impact is low (its energy under 200 Hz), sparks are bright (over 2 kHz).
         def low_share(x):
             spec = np.abs(np.fft.rfft(x))
             freqs = np.fft.rfftfreq(len(x), 1 / foley.RATE)
             return spec[freqs < 200].sum() / spec.sum()
+
         self.assertGreater(low_share(foley.event("impact", 1)), 0.4)
         self.assertLess(low_share(foley.event("sparks", 1)), 0.05)
 
@@ -51,10 +54,13 @@ class TestTheStem(unittest.TestCase):
             self.assertTrue(np.isfinite(out).all())
 
     def test_events_land_on_their_second_and_beds_span_their_shot(self):
-        stem = foley.render([{"kind": "rain", "start": 1.0, "end": 2.0, "gain": -12},
-                             {"kind": "coin", "start": 2.5, "gain": -6}], 4.0, seed=1)
+        stem = foley.render(
+            [{"kind": "rain", "start": 1.0, "end": 2.0, "gain": -12}, {"kind": "coin", "start": 2.5, "gain": -6}],
+            4.0,
+            seed=1,
+        )
         self.assertEqual(stem.shape, (4 * foley.RATE, 2))
-        energy = lambda a, b: float(np.abs(stem[int(a * foley.RATE):int(b * foley.RATE)]).mean())  # noqa: E731
+        energy = lambda a, b: float(np.abs(stem[int(a * foley.RATE) : int(b * foley.RATE)]).mean())  # noqa: E731
         self.assertLess(energy(0.0, 0.9), 1e-6)  # nothing before the rain
         self.assertGreater(energy(1.2, 1.8), 1e-3)  # the rain
         self.assertLess(energy(2.1, 2.45), 1e-6)  # silence between
@@ -64,8 +70,10 @@ class TestTheStem(unittest.TestCase):
     def test_coverage_names_silent_shots_and_unheard_characters(self):
         shots = [{"id": 1, "characters": []}, {"id": 2, "characters": ["pigeon"]}, {"id": 3, "characters": ["owl"]}]
         cues = [{"shot": 1, "kind": "rain"}, {"shot": 2, "kind": "wind"}, {"shot": 2, "kind": "rain"}]
-        self.assertEqual(foley.coverage(shots, cues), {"shots": 3, "covered": 2, "ratio": 0.667, "silent": [3],
-                                                       "characterShotsUnheard": [2, 3]})
+        self.assertEqual(
+            foley.coverage(shots, cues),
+            {"shots": 3, "covered": 2, "ratio": 0.667, "silent": [3], "characterShotsUnheard": [2, 3]},
+        )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 """Image to video with Wan 2.2 TI2V 5B: the photo's crop, the size ladder, the refusals, the hand-over (no GPU)."""
+
 from __future__ import annotations
 
 import base64
@@ -43,8 +44,14 @@ class TestCrop(unittest.TestCase):
         source = photo(1600, 900, mark=(1300, 450))  # the subject sits at the right
         centred = video_models.crop_to_aspect(source, 704, 1280)
         subject = video_models.crop_to_aspect(source, 704, 1280, focus=(1300 / 1600, 0.5))
+
         def reds(im):
-            return sum(1 for x in range(im.width) for y in range(im.height) if im.getpixel((x, y))[0] > 200 and im.getpixel((x, y))[1] < 50)
+            return sum(
+                1
+                for x in range(im.width)
+                for y in range(im.height)
+                if im.getpixel((x, y))[0] > 200 and im.getpixel((x, y))[1] < 50
+            )
 
         self.assertEqual(0, reds(centred))
         self.assertGreater(reds(subject), 0)
@@ -107,7 +114,10 @@ class FakePipe:
 
 class TestResidentGuard(unittest.TestCase):
     def test_a_resident_pipeline_has_paid_for_its_memory(self):
-        with patch.object(wan_generator, "_pipe", object()), patch.object(wan_generator, "_pipe_name", f"{MODEL}:image"):
+        with (
+            patch.object(wan_generator, "_pipe", object()),
+            patch.object(wan_generator, "_pipe_name", f"{MODEL}:image"),
+        ):
             self.assertTrue(wan_generator.is_resident(MODEL, True))
             self.assertFalse(wan_generator.is_resident(MODEL, False))  # the text pipeline is another resident
             self.assertFalse(wan_generator.is_resident("not-a-model", True))
@@ -120,9 +130,11 @@ class TestLadder(unittest.TestCase):
         pipe = FakePipe(fits)
         torch = MagicMock()
         torch.cuda.OutOfMemoryError = type("OOM", (RuntimeError,), {})
-        with patch.object(wan_generator, "_torch", return_value=torch), patch.object(
-            wan_generator, "_pipe", pipe
-        ), patch.object(wan_generator, "_pipe_name", f"{MODEL}:image"):
+        with (
+            patch.object(wan_generator, "_torch", return_value=torch),
+            patch.object(wan_generator, "_pipe", pipe),
+            patch.object(wan_generator, "_pipe_name", f"{MODEL}:image"),
+        ):
             frames = wan_generator.generate_wan_frames(
                 MODEL, "a quiet street", 1280, 704, 5, 4, 7, image=photo(), fallback_sizes=fallback
             )
@@ -155,9 +167,11 @@ class TestHandOver(unittest.TestCase):
         response = MagicMock()
         response.read.return_value = b"\xff\xd8jpeg"
         response.__enter__.return_value = response
-        with patch.dict(os.environ, {"MEDIA_ASSET_SINK_URL": "http://core:8090"}), patch.object(
-            asset_sink, "_service_token", return_value="tok"
-        ), patch.object(asset_sink.urllib.request, "urlopen", return_value=response) as opened:
+        with (
+            patch.dict(os.environ, {"MEDIA_ASSET_SINK_URL": "http://core:8090"}),
+            patch.object(asset_sink, "_service_token", return_value="tok"),
+            patch.object(asset_sink.urllib.request, "urlopen", return_value=response) as opened,
+        ):
             got = consumer._starting_image(job, {"imagePath": "/srv/uploads/u-1/a.jpg"}, scratch)
         request = opened.call_args.args[0]
         self.assertEqual("http://core:8090/internal/v1/jobs/j-1/input/image", request.full_url)
@@ -174,9 +188,11 @@ class TestHandOver(unittest.TestCase):
         response = MagicMock()
         response.read.return_value = b"photo"
         response.__enter__.return_value = response
-        with patch.dict(os.environ, {"MEDIA_ASSET_SINK_URL": "http://core:8090"}), patch.object(
-            asset_sink, "_service_token", return_value="tok"
-        ), patch.object(asset_sink.urllib.request, "urlopen", return_value=response) as opened:
+        with (
+            patch.dict(os.environ, {"MEDIA_ASSET_SINK_URL": "http://core:8090"}),
+            patch.object(asset_sink, "_service_token", return_value="tok"),
+            patch.object(asset_sink.urllib.request, "urlopen", return_value=response) as opened,
+        ):
             consumer._starting_image({"jobId": "j-2", "userId": "u-1"}, {"image": asset}, scratch)
         self.assertEqual(
             f"http://core:8090/internal/v1/jobs/j-2/input/image?asset={asset}", opened.call_args.args[0].full_url
@@ -246,8 +262,10 @@ class TestA14bLocal(unittest.TestCase):
         self.assertGreaterEqual(main.MODEL_MEMORY_GB["wan2.2-t2v-a14b"], 64)
         pipe = FakePipe(5000)
         torch = MagicMock()
-        with patch.object(wan_generator, "_torch", return_value=torch), patch.object(wan_generator, "_pipe", pipe), patch.object(
-            wan_generator, "_pipe_name", "wan2.2-t2v-a14b"
+        with (
+            patch.object(wan_generator, "_torch", return_value=torch),
+            patch.object(wan_generator, "_pipe", pipe),
+            patch.object(wan_generator, "_pipe_name", "wan2.2-t2v-a14b"),
         ):
             wan_generator.generate_wan_frames("wan2.2-t2v-a14b", "x", 1280, 720, 5, 4, 7)
         self.assertEqual((4.0, 3.0), (pipe.calls[0]["guidance_scale"], pipe.calls[0]["guidance_scale_2"]))
