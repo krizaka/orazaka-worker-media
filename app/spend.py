@@ -6,6 +6,7 @@ Configuration, bounded context ``AI_``: ``AI_VIDEO_DAILY_RUNS`` (default 5, nega
 ``AI_SPEND_DAILY_BUDGET_USD`` (default 5, negative = off), ``AI_SPEND_STATE_FILE`` (the day's counters,
 kept on disk so a restart does not give the day back).
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -54,11 +55,17 @@ def reserve(cost_usd: float, env: dict | None = None, now: dt.datetime | None = 
     with _lock:
         state = _load(path, day)
         if max_runs >= 0 and state["runs"] + 1 > max_runs:
-            log.error("SPEND ALERT: %d paid video clips today, the daily limit (%d) is reached", int(state["runs"]), max_runs)
+            log.error(
+                "SPEND ALERT: %d paid video clips today, the daily limit (%d) is reached", int(state["runs"]), max_runs
+            )
             raise SpendRefused(f"the daily limit of {max_runs} video clips is reached; it resets at 00:00 UTC")
         if budget >= 0 and state["usd"] + cost_usd > budget:
-            log.error("SPEND ALERT: %.2f USD spent today, the daily budget (%.2f) is reached", float(state["usd"]), budget)
-            raise SpendRefused(f"the daily budget of {budget:.2f} USD for paid providers is reached; it resets at 00:00 UTC")
+            log.error(
+                "SPEND ALERT: %.2f USD spent today, the daily budget (%.2f) is reached", float(state["usd"]), budget
+            )
+            raise SpendRefused(
+                f"the daily budget of {budget:.2f} USD for paid providers is reached; it resets at 00:00 UTC"
+            )
         state["runs"] += 1
         state["usd"] = round(state["usd"] + cost_usd, 4)
         try:

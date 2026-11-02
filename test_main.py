@@ -57,9 +57,9 @@ with patch.dict(os.environ, {"SPRING_RABBITMQ_HOST": "localhost", "SPRING_RABBIT
     with patch("sys.exit"):
         # The module loads the pipeline at import time, so we mock it
         import importlib
+
         spec = importlib.util.spec_from_file_location(
-            "video_worker",
-            os.path.join(os.path.dirname(__file__), "app", "main.py")
+            "video_worker", os.path.join(os.path.dirname(__file__), "app", "main.py")
         )
         video_worker = importlib.util.module_from_spec(spec)
         # Prevent the top-level pipeline load from running
@@ -119,8 +119,7 @@ class TestTheRunnerCollectsEveryDefinedTest(unittest.TestCase):
                     defined += [
                         f"{node.name}.{item.name}"
                         for item in node.body
-                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                        and item.name.startswith("test")
+                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("test")
                     ]
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
                 defined.append(node.name)
@@ -186,7 +185,7 @@ class TestPreflightMemoryGuard(unittest.TestCase):
 
     def test_heavy_model_rejected_when_insufficient_memory(self):
         """SVD-XT (~96GB) must be refused on a host with ~50GB available."""
-        fake_vm = MagicMock(available=50 * 1024 ** 3, percent=40.0)
+        fake_vm = MagicMock(available=50 * 1024**3, percent=40.0)
         with patch.object(video_worker, "psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = fake_vm
             with self.assertRaises(RuntimeError) as ctx:
@@ -195,7 +194,7 @@ class TestPreflightMemoryGuard(unittest.TestCase):
 
     def test_light_model_allowed_with_ample_memory(self):
         """AnimateDiff-Lightning (~6GB) must pass the preflight with ~50GB available."""
-        fake_vm = MagicMock(available=50 * 1024 ** 3, percent=40.0)
+        fake_vm = MagicMock(available=50 * 1024**3, percent=40.0)
         with patch.object(video_worker, "psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = fake_vm
             # Must not raise.
@@ -203,7 +202,7 @@ class TestPreflightMemoryGuard(unittest.TestCase):
 
     def test_high_memory_pressure_aborts(self):
         """Acute memory pressure (>=92% used) aborts even a light model."""
-        fake_vm = MagicMock(available=50 * 1024 ** 3, percent=95.0)
+        fake_vm = MagicMock(available=50 * 1024**3, percent=95.0)
         with patch.object(video_worker, "psutil") as mock_psutil:
             mock_psutil.virtual_memory.return_value = fake_vm
             with self.assertRaises(RuntimeError):
@@ -228,20 +227,24 @@ class TestSendProgressUpdate(unittest.TestCase):
 
         mock_pika.BlockingConnection.assert_called_once()
         mock_channel.exchange_declare.assert_called_once_with(
-            exchange='orazaka.events',
-            exchange_type='topic',
-            durable=True
+            exchange="orazaka.events", exchange_type="topic", durable=True
         )
         mock_channel.basic_publish.assert_called_once()
 
         # Verify the routing key follows job.{jobId}.progress (AGENTS.md §6)
         publish_kwargs = mock_channel.basic_publish.call_args.kwargs
-        self.assertEqual(publish_kwargs.get("exchange"), 'orazaka.events')
-        self.assertEqual(publish_kwargs.get("routing_key"), 'job.job-123.progress')
+        self.assertEqual(publish_kwargs.get("exchange"), "orazaka.events")
+        self.assertEqual(publish_kwargs.get("routing_key"), "job.job-123.progress")
 
         # Verify the published message content
         call_kwargs = mock_channel.basic_publish.call_args
-        body = call_kwargs[1]["body"] if "body" in call_kwargs[1] else call_kwargs[0][2] if len(call_kwargs[0]) > 2 else None
+        body = (
+            call_kwargs[1]["body"]
+            if "body" in call_kwargs[1]
+            else call_kwargs[0][2]
+            if len(call_kwargs[0]) > 2
+            else None
+        )
         if body is None:
             body = call_kwargs.kwargs.get("body")
         parsed = json.loads(body)
@@ -357,8 +360,7 @@ class TestConsumptionMetering(unittest.TestCase):
         rendered = [Image.new("RGB", (512, 320)) for _ in range(16)]
         metrics = {}
 
-        video_worker._record_consumption(metrics, rendered, steps=4, fps=12,
-                                         req_width=1024, req_height=576)
+        video_worker._record_consumption(metrics, rendered, steps=4, fps=12, req_width=1024, req_height=576)
 
         self.assertEqual(metrics["frames"], 16)
         self.assertEqual(metrics["width"], 512)
@@ -369,8 +371,7 @@ class TestConsumptionMetering(unittest.TestCase):
     def test_record_consumption_never_fails_a_successful_render(self):
         metrics = {}
 
-        video_worker._record_consumption(metrics, ["not-an-image"], steps=4, fps=12,
-                                         req_width=None, req_height=None)
+        video_worker._record_consumption(metrics, ["not-an-image"], steps=4, fps=12, req_width=None, req_height=None)
 
         # The bad frame is swallowed; an absent measurement releases the hold.
         self.assertNotIn("width", metrics)
@@ -447,6 +448,7 @@ class TestVideoInferenceHandlerRouting(unittest.TestCase):
         self.thread.start()
 
         import urllib.request
+
         url = f"http://127.0.0.1:{self.port}/"
         with urllib.request.urlopen(url) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -458,6 +460,7 @@ class TestVideoInferenceHandlerRouting(unittest.TestCase):
         self.thread.start()
 
         import urllib.request
+
         url = f"http://127.0.0.1:{self.port}/unknown"
         try:
             urllib.request.urlopen(url)
@@ -470,11 +473,8 @@ class TestVideoInferenceHandlerRouting(unittest.TestCase):
         self.thread.start()
 
         import urllib.request
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}/unknown",
-            data=b"{}",
-            method="POST"
-        )
+
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/unknown", data=b"{}", method="POST")
         try:
             urllib.request.urlopen(req)
             self.fail("Expected HTTP 404")
@@ -499,12 +499,13 @@ class TestModelRegistryValidation(unittest.TestCase):
         self.thread.start()
 
         import urllib.request
+
         payload = json.dumps({"model": "nonexistent-model"}).encode("utf-8")
         req = urllib.request.Request(
             f"http://127.0.0.1:{self.port}/v1/videos/generations",
             data=payload,
             headers={"Content-Type": "application/json"},
-            method="POST"
+            method="POST",
         )
         try:
             urllib.request.urlopen(req)
@@ -599,6 +600,7 @@ class TestPathSecurity(unittest.TestCase):
     def test_encoder_rejects_hyphen_filename(self):
         """export_frames_to_video should reject output paths starting with a hyphen to prevent flag injection."""
         from app.encoder import export_frames_to_video
+
         img = Image.new("RGB", (1024, 576), (128, 128, 128))
         with self.assertRaises(ValueError):
             export_frames_to_video([img], "-some_flag.mp4")
@@ -680,10 +682,7 @@ class TestMemoryCapEnforcement(unittest.TestCase):
         PROCESS_RSS_CAP_MB = 6000.0
         SYSTEM_AVAIL_MIN_MB = 1500.0
 
-        force_fallback = (
-            process_mem_mb > PROCESS_RSS_CAP_MB or
-            available_mem_mb < SYSTEM_AVAIL_MIN_MB
-        )
+        force_fallback = process_mem_mb > PROCESS_RSS_CAP_MB or available_mem_mb < SYSTEM_AVAIL_MIN_MB
         self.assertFalse(force_fallback)
 
 
@@ -720,10 +719,7 @@ class TestConsumerDispatch(unittest.TestCase):
         import pathlib
 
         declaration = pathlib.Path(__file__).parent / "worker.yaml"
-        body = "\n".join(
-            line for line in declaration.read_text().splitlines()
-            if not line.strip().startswith("#")
-        )
+        body = "\n".join(line for line in declaration.read_text().splitlines() if not line.strip().startswith("#"))
         self.assertNotIn("orazaka.core.", body)
         self.assertNotIn("orazaka.studio.", body)
 
@@ -747,8 +743,12 @@ class TestConsumerDispatch(unittest.TestCase):
 
         self.assertIsNone(_requested_model({"model": ""}, {"model": "default"}))
         self.assertIsNone(_requested_model({}, {}))
-        self.assertEqual(_requested_model({"model": ""}, {"model": "mlx-animatediff-lightning"}), "mlx-animatediff-lightning")
-        self.assertEqual(_requested_model({"model": "animatediff-lightning-mps"}, {"model": "default"}), "animatediff-lightning-mps")
+        self.assertEqual(
+            _requested_model({"model": ""}, {"model": "mlx-animatediff-lightning"}), "mlx-animatediff-lightning"
+        )
+        self.assertEqual(
+            _requested_model({"model": "animatediff-lightning-mps"}, {"model": "default"}), "animatediff-lightning-mps"
+        )
 
     def test_compose_is_decided_by_the_routing_key(self):
         from app.consumer import _is_compose
@@ -770,9 +770,7 @@ class TestConsumerDispatch(unittest.TestCase):
 
         with open(consumer.__file__, encoding="utf-8") as handle:
             source = handle.read()
-        code = "\n".join(
-            line for line in source.splitlines() if not line.strip().startswith("#")
-        )
+        code = "\n".join(line for line in source.splitlines() if not line.strip().startswith("#"))
         self.assertNotIn("featureKey", code.split("def _on_message")[1].split("def ")[0])
 
 
@@ -871,7 +869,14 @@ class TestEnvelopeInterop(unittest.TestCase):
 
     FIXTURE_DIR = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "..", "orazaka-libs", "orazaka-ai-engine", "orazaka-assets", "target", "interop",
+        "..",
+        "..",
+        "..",
+        "orazaka-libs",
+        "orazaka-ai-engine",
+        "orazaka-assets",
+        "target",
+        "interop",
     )
 
     def _keyring(self):
@@ -898,9 +903,7 @@ class TestEnvelopeInterop(unittest.TestCase):
         with open(os.path.join(self.FIXTURE_DIR, "plain.bin"), "rb") as handle:
             expected = handle.read()
         for offset in (0, 1, 4095, 4096, 4097, 3 * 4096 + 100):
-            self.assertEqual(
-                expected[offset:], envelope.decrypt_bytes(sealed, self._keyring(), offset)
-            )
+            self.assertEqual(expected[offset:], envelope.decrypt_bytes(sealed, self._keyring(), offset))
 
     def test_python_writes_a_fixture_java_can_open(self):
         from app import envelope
@@ -997,9 +1000,10 @@ class TestCompositionDivergenceContract(unittest.TestCase):
             self.photos.append(path)
         self.short_voiceover = os.path.join(self.workdir, "voiceover.m4a")
         subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
-             "-c:a", "aac", self.short_voiceover],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac", self.short_voiceover],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
         )
 
     def tearDown(self):
@@ -1011,12 +1015,26 @@ class TestCompositionDivergenceContract(unittest.TestCase):
         """What the file is, read from the file."""
         import subprocess
 
-        video = json.loads(subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=width,height,r_frame_rate:format=duration",
-             "-of", "json", path],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True,
-        ).stdout)
+        video = json.loads(
+            subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height,r_frame_rate:format=duration",
+                    "-of",
+                    "json",
+                    path,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                text=True,
+            ).stdout
+        )
         stream = video["streams"][0]
         return {
             "seconds": float(video["format"]["duration"]),
@@ -1030,16 +1048,18 @@ class TestCompositionDivergenceContract(unittest.TestCase):
 
         output = os.path.join(self.workdir, "composed.mp4")
         billed = compose(
-            self.photos, output, audio_path=audio_path,
-            seconds_per_photo=self.SECONDS_PER_PHOTO, width=self.WIDTH, height=self.HEIGHT,
+            self.photos,
+            output,
+            audio_path=audio_path,
+            seconds_per_photo=self.SECONDS_PER_PHOTO,
+            width=self.WIDTH,
+            height=self.HEIGHT,
         )
         return billed, self._probe(output)
 
     def _billed_seconds(self, billed):
         """What billing will price: the duration the composer measured on the file."""
-        self.assertIsNotNone(
-            billed.get("durationSeconds"), f"nothing billable was reported: {billed}"
-        )
+        self.assertIsNotNone(billed.get("durationSeconds"), f"nothing billable was reported: {billed}")
         return billed["durationSeconds"]
 
     def test_a_short_voiceover_bills_the_file_not_the_slideshow(self):
@@ -1048,7 +1068,9 @@ class TestCompositionDivergenceContract(unittest.TestCase):
         # The fixture is what it claims: the file really is the voiceover's length, not 9 s.
         self.assertLess(produced["seconds"], 3.0, "fixture: -shortest did not shorten the file")
         self.assertAlmostEqual(
-            self._billed_seconds(billed), produced["seconds"], delta=self.TOLERANCE_SECONDS,
+            self._billed_seconds(billed),
+            produced["seconds"],
+            delta=self.TOLERANCE_SECONDS,
             msg=f"billed {billed} for a file of {produced['seconds']:.2f} s",
         )
 
@@ -1061,18 +1083,16 @@ class TestCompositionDivergenceContract(unittest.TestCase):
         # ADR-066 stopped billing from reading it.
         self.assertNotIn("fps", billed, "the bill no longer reads a frame rate")
         self.assertAlmostEqual(
-            self._billed_seconds(billed), produced["seconds"], delta=self.TOLERANCE_SECONDS,
+            self._billed_seconds(billed),
+            produced["seconds"],
+            delta=self.TOLERANCE_SECONDS,
             msg=f"billed {billed} for a file of {produced['seconds']:.2f} s",
         )
 
     def test_the_billed_dimensions_are_the_files(self):
         billed, produced = self._compose(self.short_voiceover)
 
-        self.assertEqual(
-            (billed["width"], billed["height"]), (produced["width"], produced["height"])
-        )
-
-
+        self.assertEqual((billed["width"], billed["height"]), (produced["width"], produced["height"]))
 
 
 class AssetIdResolutionTest(unittest.TestCase):
@@ -1104,9 +1124,7 @@ class AssetIdResolutionTest(unittest.TestCase):
             self.assertIsNotNone(resolved)
             self.assertTrue(os.path.isfile(resolved))
             # realpath: macOS resolves /var to /private/var, so compare canonicals.
-            self.assertTrue(
-                resolved.startswith(os.path.realpath(os.path.join(root, owner)))
-            )
+            self.assertTrue(resolved.startswith(os.path.realpath(os.path.join(root, owner))))
 
     def test_another_actors_asset_is_not_found(self):
         from app.consumer import _resolve_owned_asset
@@ -1114,9 +1132,7 @@ class AssetIdResolutionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             asset = self._seed(root, "550e8400-e29b-41d4-a716-446655440001")
 
-            self.assertIsNone(
-                _resolve_owned_asset(root, "550e8400-e29b-41d4-a716-446655440002", asset)
-            )
+            self.assertIsNone(_resolve_owned_asset(root, "550e8400-e29b-41d4-a716-446655440002", asset))
 
     def test_traversal_in_an_asset_id_escapes_nothing(self):
         from app.consumer import _resolve_owned_asset
@@ -1154,15 +1170,16 @@ class AssetIdResolutionTest(unittest.TestCase):
             owner = "550e8400-e29b-41d4-a716-446655440001"
             first = self._seed(root, owner, "a1b2c3d4-0000-4000-8000-000000000001")
             second = self._seed(root, owner, "a1b2c3d4-0000-4000-8000-000000000002")
-            job = {"jobId": "job-1", "userId": owner,
-                   "payload": {"photos": [first, second]}}
+            job = {"jobId": "job-1", "userId": owner, "payload": {"photos": [first, second]}}
 
             # `_seal` needs a keyring, like the worker does in production; a stub here would test
             # a code path that no longer exists (ADR-054).
-            with patch.object(consumer, "_upload_root", return_value=root), \
-                    patch.object(consumer, "compose", return_value={}) as composed, \
-                    patch.object(consumer, "extract_consumption", return_value={}), \
-                    patch.object(consumer, "_seal"):
+            with (
+                patch.object(consumer, "_upload_root", return_value=root),
+                patch.object(consumer, "compose", return_value={}) as composed,
+                patch.object(consumer, "extract_consumption", return_value={}),
+                patch.object(consumer, "_seal"),
+            ):
                 consumer._compose(job)
 
             passed = composed.call_args[0][0]
@@ -1179,7 +1196,12 @@ class TestEncoderConfinesItsOutput(unittest.TestCase):
 
     def test_refuses_a_path_outside_the_allowed_roots(self):
         from app import encoder
-        for bad in ("/etc/orazaka-evil.mp4", "/root/x.mp4", os.path.join(tempfile.gettempdir(), "..", "..", "etc", "x.mp4")):
+
+        for bad in (
+            "/etc/orazaka-evil.mp4",
+            "/root/x.mp4",
+            os.path.join(tempfile.gettempdir(), "..", "..", "etc", "x.mp4"),
+        ):
             with patch.object(encoder.subprocess, "run") as run:
                 with self.assertRaises(PermissionError, msg=bad):
                     encoder.export_frames_to_video(self._frames(), bad)
@@ -1187,6 +1209,7 @@ class TestEncoderConfinesItsOutput(unittest.TestCase):
 
     def test_refuses_a_leading_hyphen_name(self):
         from app import encoder
+
         with patch.object(encoder.subprocess, "run") as run:
             with self.assertRaises(ValueError):
                 encoder.export_frames_to_video(self._frames(), os.path.join(tempfile.gettempdir(), "-y.mp4"))
@@ -1194,6 +1217,7 @@ class TestEncoderConfinesItsOutput(unittest.TestCase):
 
     def test_ffmpeg_receives_an_absolute_output_path(self):
         from app import encoder
+
         out = os.path.join(tempfile.gettempdir(), "orazaka-enc-ok.mp4")
         with patch.object(encoder.subprocess, "run") as run:
             encoder.export_frames_to_video(self._frames(), out)
@@ -1202,6 +1226,7 @@ class TestEncoderConfinesItsOutput(unittest.TestCase):
     def test_no_subprocess_in_the_worker_uses_a_shell(self):
         import glob
         import re
+
         for path in glob.glob(os.path.join(os.path.dirname(__file__), "app", "*.py")):
             with open(path, encoding="utf-8") as source:
                 self.assertIsNone(re.search(r"shell\s*=\s*True|os\.system\(", source.read()), path)

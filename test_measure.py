@@ -26,6 +26,7 @@ class TestMeasure(unittest.TestCase):
 class TestLoadModes(unittest.TestCase):
     def test_the_load_modes_are_the_four_the_decision_compares(self):
         import re
+
         source = Path(measure.__file__).read_text()
         modes = re.search(r'choices=\[([^\]]+)\], default="volume"', source).group(1)
         self.assertEqual(['"volume"', '"stage"', '"warm-stage"', '"prefetch"'], [m.strip() for m in modes.split(",")])
@@ -53,13 +54,15 @@ def run_load(mode, stage_dir, events, model=None, donor=None):
         (tmp / "donor").mkdir()
     fake_cache = mock.Mock()
     fake_cache.stage.side_effect = lambda src, dst: events.append(("stage", src.name, dst.parent))
-    with mock.patch.dict(os.environ, env, clear=False), \
-            mock.patch.object(measure, "_resolve", lambda module, names: events.append(("resolve", module, names))), \
-            mock.patch.object(measure, "_snapshot", lambda m: snapshots[id(m)]), \
-            mock.patch.object(measure, "evict", lambda path: events.append(("evict", Path(path).name)) or 0), \
-            mock.patch("app.video_models.find", lambda name, *a: donor if donor and name == "donor" else model), \
-            mock.patch("app.model_cache.stage", fake_cache.stage), \
-            mock.patch("app.wan_generator._load", lambda m, from_image=False: events.append(("load",))):
+    with (
+        mock.patch.dict(os.environ, env, clear=False),
+        mock.patch.object(measure, "_resolve", lambda module, names: events.append(("resolve", module, names))),
+        mock.patch.object(measure, "_snapshot", lambda m: snapshots[id(m)]),
+        mock.patch.object(measure, "evict", lambda path: events.append(("evict", Path(path).name)) or 0),
+        mock.patch("app.video_models.find", lambda name, *a: donor if donor and name == "donor" else model),
+        mock.patch("app.model_cache.stage", fake_cache.stage),
+        mock.patch("app.wan_generator._load", lambda m, from_image=False: events.append(("load",))),
+    ):
         if not stage_dir:
             os.environ.pop("MEDIA_MODELS_STAGE_DIR", None)
         line = measure.measure_load("fake", mode)
@@ -86,7 +89,9 @@ class TestLoadBehaviour(unittest.TestCase):
         events = []
         run_load("volume", None, events, model=model)
         self.assertIn(("resolve", "diffusers", ("LTXConditionPipeline",)), events)
-        self.assertNotIn(("resolve", "diffusers", ("AutoencoderKLWan", "WanImageToVideoPipeline", "WanPipeline")), events)
+        self.assertNotIn(
+            ("resolve", "diffusers", ("AutoencoderKLWan", "WanImageToVideoPipeline", "WanPipeline")), events
+        )
 
     def test_warm_stage_completes_the_copy_before_the_timer_and_keeps_staging_on(self):
         events = []
@@ -146,17 +151,37 @@ class TestAcceleration(unittest.TestCase):
 
     def test_fp8_stores_the_weights_in_fp8_and_computes_in_bf16(self):
         pipe = FakePipe()
-        measure.apply_acceleration(pipe, measure.parse_accel("fp8"), 0.2, fp8_dtype="f8", cache_config=lambda threshold: threshold, compute_dtype="bf16")
+        measure.apply_acceleration(
+            pipe,
+            measure.parse_accel("fp8"),
+            0.2,
+            fp8_dtype="f8",
+            cache_config=lambda threshold: threshold,
+            compute_dtype="bf16",
+        )
         self.assertEqual([("casting", {"storage_dtype": "f8", "compute_dtype": "bf16"})], pipe.transformer.calls)
 
     def test_firstblock_takes_the_threshold(self):
         pipe = FakePipe()
-        measure.apply_acceleration(pipe, measure.parse_accel("firstblock"), 0.15, fp8_dtype="f8", cache_config=lambda threshold: ("cfg", threshold))
+        measure.apply_acceleration(
+            pipe,
+            measure.parse_accel("firstblock"),
+            0.15,
+            fp8_dtype="f8",
+            cache_config=lambda threshold: ("cfg", threshold),
+        )
         self.assertEqual([("cache", ("cfg", 0.15))], pipe.transformer.calls)
 
     def test_both_apply_in_a_fixed_order_fp8_first(self):
         pipe = FakePipe()
-        measure.apply_acceleration(pipe, measure.parse_accel("firstblock+fp8"), 0.2, fp8_dtype="f8", cache_config=lambda threshold: threshold, compute_dtype="bf16")
+        measure.apply_acceleration(
+            pipe,
+            measure.parse_accel("firstblock+fp8"),
+            0.2,
+            fp8_dtype="f8",
+            cache_config=lambda threshold: threshold,
+            compute_dtype="bf16",
+        )
         self.assertEqual(["casting", "cache"], [name for name, _ in pipe.transformer.calls])
 
     def test_an_unknown_acceleration_is_refused_by_name(self):

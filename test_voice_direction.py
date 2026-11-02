@@ -1,5 +1,6 @@
 """A narrator directed like an actor (app/voice_direction.py, orazaka#289): emotion words become Zonos's emotion axes,
 pace a speaking rate, emphasis a slower and more melodic phrase, punctuation a breath."""
+
 from __future__ import annotations
 
 import unittest
@@ -14,20 +15,30 @@ class TestDirection(unittest.TestCase):
         self.assertAlmostEqual(sum(warm.values()), 1.0, places=2)
         self.assertEqual(max(warm, key=warm.get), "happiness")
         self.assertGreater(tense["fear"], warm["fear"])
-        self.assertEqual(max(dict(zip(vd.AXES, vd.emotion_vector(""), strict=True)).items(), key=lambda x: x[1])[0], "neutral")
+        self.assertEqual(
+            max(dict(zip(vd.AXES, vd.emotion_vector(""), strict=True)).items(), key=lambda x: x[1])[0], "neutral"
+        )
 
     def test_a_line_is_said_in_phrases_with_the_breaths_its_punctuation_asks(self):
-        self.assertEqual(vd.phrases("The night the storm came… one parcel still had to cross the valley."),
-                         [("The night the storm came", 0.55), ("one parcel still had to cross the valley.", 0.0)])
-        self.assertEqual(vd.phrases("The falcon keeps watch: security comes first."),
-                         [("The falcon keeps watch", 0.3), ("security comes first.", 0.0)])
+        self.assertEqual(
+            vd.phrases("The night the storm came… one parcel still had to cross the valley."),
+            [("The night the storm came", 0.55), ("one parcel still had to cross the valley.", 0.0)],
+        )
+        self.assertEqual(
+            vd.phrases("The falcon keeps watch: security comes first."),
+            [("The falcon keeps watch", 0.3), ("security comes first.", 0.0)],
+        )
 
     def test_a_phrase_of_one_or_two_words_is_said_with_the_next(self):
         # orazaka#289: « In Québec, they help you… » lost « In Québec » in every take — Zonos drops a two-word utterance.
-        self.assertEqual(vd.phrases("In Québec, they help you… then they argue about how."),
-                         [("In Québec, they help you", 0.55), ("then they argue about how.", 0.0)])
-        self.assertEqual(vd.phrases("Au Québec, on t’aide… pis on s’obstine sur comment."),
-                         [("Au Québec, on t’aide", 0.55), ("pis on s’obstine sur comment.", 0.0)])
+        self.assertEqual(
+            vd.phrases("In Québec, they help you… then they argue about how."),
+            [("In Québec, they help you", 0.55), ("then they argue about how.", 0.0)],
+        )
+        self.assertEqual(
+            vd.phrases("Au Québec, on t’aide… pis on s’obstine sur comment."),
+            [("Au Québec, on t’aide", 0.55), ("pis on s’obstine sur comment.", 0.0)],
+        )
         self.assertEqual(vd.phrases("Hush."), [("Hush.", 0.0)])
 
     def test_the_typographic_apostrophe_is_said_like_a_plain_one(self):
@@ -35,8 +46,10 @@ class TestDirection(unittest.TestCase):
         self.assertEqual(vd.plan("Au Québec, on t’aide.", {})[0].text, "Au Québec, on t'aide.")
 
     def test_pace_and_emphasis(self):
-        plan = vd.plan("And when the night is longest… no one flies alone.",
-                       {"emotion": "tender, rising hope", "pace": "slow", "emphasis": ["alone"], "pauseAfter": 0.6})
+        plan = vd.plan(
+            "And when the night is longest… no one flies alone.",
+            {"emotion": "tender, rising hope", "pace": "slow", "emphasis": ["alone"], "pauseAfter": 0.6},
+        )
         self.assertEqual([p.rate for p in plan], [11.0, 9.9])
         self.assertEqual([p.pitch_std for p in plan], [60.0, 78.0])
         self.assertEqual([p.pause_after for p in plan], [0.55, 0.6])

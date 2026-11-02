@@ -30,8 +30,14 @@ class TestPayload(unittest.TestCase):
     def test_the_stage_travels_with_its_real_values(self):
         payload = progress_payload("j", 40, stage="STREAMING_WEIGHTS_NVME", weights_percent=40, eta_seconds=7, at=12)
         self.assertEqual(
-            {"jobId": "j", "progress": 40, "stage": "STREAMING_WEIGHTS_NVME", "weightsPercent": 40,
-             "etaSeconds": 7, "at": 12},
+            {
+                "jobId": "j",
+                "progress": 40,
+                "stage": "STREAMING_WEIGHTS_NVME",
+                "weightsPercent": 40,
+                "etaSeconds": 7,
+                "at": 12,
+            },
             payload,
         )
 
@@ -58,8 +64,14 @@ class TestOrder(unittest.TestCase):
         rep.completed()
         names = [s["stage"] for s in sent]
         self.assertEqual(
-            ["COLD_START_WAKEUP", "STREAMING_WEIGHTS_NVME", "INFERENCE_STEP", "INFERENCE_STEP",
-             "SANDBOX_VERIFICATION", "COMPLETED"],
+            [
+                "COLD_START_WAKEUP",
+                "STREAMING_WEIGHTS_NVME",
+                "INFERENCE_STEP",
+                "INFERENCE_STEP",
+                "SANDBOX_VERIFICATION",
+                "COMPLETED",
+            ],
             names,
         )
 
@@ -150,10 +162,11 @@ class TestConsumerWiring(unittest.TestCase):
         order = []
         rep = stages.StageReporter("job-w", "m", "cuda", stages.EtaHistory(), send=lambda p: order.append(p["stage"]))
         body = json.dumps({"jobId": "job-w", "userId": "u", "payload": {"prompt": "x"}}).encode()
-        with patch.object(stages, "reporter_for", return_value=rep), patch.object(
-            consumer, "_generate", return_value=({"url": "u"}, {})
-        ), patch.object(consumer, "send_progress_update"), patch.object(
-            consumer, "send_job_done", side_effect=lambda *a, **k: order.append("done")
+        with (
+            patch.object(stages, "reporter_for", return_value=rep),
+            patch.object(consumer, "_generate", return_value=({"url": "u"}, {})),
+            patch.object(consumer, "send_progress_update"),
+            patch.object(consumer, "send_job_done", side_effect=lambda *a, **k: order.append("done")),
         ):
             consumer._on_message(MagicMock(), MagicMock(delivery_tag=1, routing_key="job.video.generate"), None, body)
         self.assertEqual(["COLD_START_WAKEUP", "COMPLETED", "done"], order)

@@ -13,6 +13,7 @@ with real textures, spatial features, and coherent motion.
 No procedural gradients. No Pillow simulations. No fallback frames.
 §12 Zero-Fallback Policy enforced — inference fails loudly.
 """
+
 from __future__ import annotations
 
 import gc
@@ -98,6 +99,7 @@ def init_animatediff_pipeline(num_steps: int = DEFAULT_STEPS) -> None:
     # SVD is now lazy-loaded, so we just need to evict it if it was loaded.
     try:
         import app.generator as gen_module
+
         if gen_module.pipe is not None:
             print("  Evicting SVD pipeline from GPU to free MPS memory...", flush=True)
             gen_module.pipe.to("cpu")
@@ -144,7 +146,7 @@ def init_animatediff_pipeline(num_steps: int = DEFAULT_STEPS) -> None:
     total_params = sum(p.numel() for p in pipe.unet.parameters())
     total_params += sum(p.numel() for p in pipe.vae.parameters())
     total_params += sum(p.numel() for p in pipe.text_encoder.parameters())
-    mem_gb = total_params * (2 if dtype == torch.float16 else 4) / (1024 ** 3)
+    mem_gb = total_params * (2 if dtype == torch.float16 else 4) / (1024**3)
     print(f"  Pipeline ready on {device.upper()}", flush=True)
     print(f"  Total parameters: {total_params:,} (~{mem_gb:.1f} GB)", flush=True)
     print("  Attention slicing: ENABLED", flush=True)
@@ -194,8 +196,11 @@ def generate_video_frames_mlx(
     valid_steps = {1, 2, 4, 8}
     actual_steps = min(valid_steps, key=lambda s: abs(s - num_inference_steps))
     if actual_steps != num_inference_steps:
-        print(f"  [AnimateDiff-Lightning] Snapping steps {num_inference_steps} → {actual_steps} "
-              f"(Lightning supports {sorted(valid_steps)})", flush=True)
+        print(
+            f"  [AnimateDiff-Lightning] Snapping steps {num_inference_steps} → {actual_steps} "
+            f"(Lightning supports {sorted(valid_steps)})",
+            flush=True,
+        )
         num_inference_steps = actual_steps
 
     # Ensure dimensions are divisible by 8 (VAE requirement)
@@ -217,8 +222,10 @@ def generate_video_frames_mlx(
     MAX_FRAMES_MPS = 16
     actual_frames = min(num_frames, MAX_FRAMES_MPS)
     if actual_frames != num_frames:
-        print(f"  [AnimateDiff-Lightning] Capping frames {num_frames} → {actual_frames} "
-              f"(MPS memory limit for 64GB)", flush=True)
+        print(
+            f"  [AnimateDiff-Lightning] Capping frames {num_frames} → {actual_frames} (MPS memory limit for 64GB)",
+            flush=True,
+        )
 
     # Use prompt or generate a default from the context
     if not prompt:
@@ -237,6 +244,7 @@ def generate_video_frames_mlx(
             seed_val = -1
         if seed_val == -1:
             import random
+
             seed_val = random.randint(0, 2147483647)  # noqa: S311 — a generation seed, not a secret
         generator = torch.manual_seed(seed_val)
         print(f"  Seed: {seed_val}", flush=True)
@@ -273,7 +281,10 @@ def generate_video_frames_mlx(
         t_inference = time.time() - t0
         print(f"  AnimateDiff-Lightning inference completed in {t_inference:.2f}s", flush=True)
         print(f"  Produced {len(frames)} real diffusion frames at {width}x{height}", flush=True)
-        print(f"  Frame type: {type(frames[0])}, size: {frames[0].size if hasattr(frames[0], 'size') else 'N/A'}", flush=True)
+        print(
+            f"  Frame type: {type(frames[0])}, size: {frames[0].size if hasattr(frames[0], 'size') else 'N/A'}",
+            flush=True,
+        )
 
         # Convert to PIL if needed (diffusers may return PIL already)
         pil_frames = []
@@ -283,6 +294,7 @@ def generate_video_frames_mlx(
             else:
                 # numpy array
                 import numpy as np
+
                 pil_frames.append(Image.fromarray(np.array(frame)))
             if progress_callback:
                 progress_callback(None, i, None, {})
@@ -293,8 +305,10 @@ def generate_video_frames_mlx(
         gc.collect()
 
         t_total = time.time() - t0
-        print(f"  MLX generation completed. Total time: {t_total:.2f}s "
-              f"({len(pil_frames)} frames at {width}x{height})", flush=True)
+        print(
+            f"  MLX generation completed. Total time: {t_total:.2f}s ({len(pil_frames)} frames at {width}x{height})",
+            flush=True,
+        )
 
         return pil_frames
 
@@ -302,6 +316,7 @@ def generate_video_frames_mlx(
         # §12 Zero-Fallback Policy — FAIL LOUDLY
         print(f"  [AnimateDiff-Lightning] Inference FAILED: {e}", flush=True)
         import traceback
+
         traceback.print_exc()
         # Force cleanup
         gc.collect()

@@ -15,6 +15,7 @@ text instead — this module writes an **ASS** script (rendered by libass throug
 
 Everything but :func:`render` is pure. Faces are passed as a fonts folder (``fontsdir``): the worker ships none.
 """
+
 from __future__ import annotations
 
 import math
@@ -142,8 +143,12 @@ def title_size(frame: Frame, text: str, wanted: int) -> int:
 def sizes(frame: Frame) -> dict:
     """Type sizes in pixels, from the frame's short side (a phone and a cinema screen read the same proportion)."""
     short = min(frame.width, frame.height)
-    return {"title": round(short * 0.050), "serif": round(short * 0.105), "subtitle": round(short * (0.052 if frame.vertical else 0.044)),
-            "label": round(short * 0.022)}
+    return {
+        "title": round(short * 0.050),
+        "serif": round(short * 0.105),
+        "subtitle": round(short * (0.052 if frame.vertical else 0.044)),
+        "label": round(short * 0.022),
+    }
 
 
 def script(frame: Frame, texts: list[Text], label: str = "") -> str:
@@ -179,12 +184,16 @@ def script(frame: Frame, texts: list[Text], label: str = "") -> str:
             size = title_size(frame, t.text, s["title"])
             track = round(size * TRACK_END)
             gap = round(s["serif"] * 0.55)
-            events.append(f"Dialogue: 1,{start},{end},Title,,0,0,0,,{{\\an5\\pos({cx},{cy - gap})\\fs{size}\\fsp{round(size * TRACK_START)}\\fad({TITLE_FADE_IN_MS},{TITLE_FADE_OUT_MS})"
-                          f"\\blur0.6\\t(0,{length_ms},\\fsp{track})}}{_escape(t.text.upper())}")
+            events.append(
+                f"Dialogue: 1,{start},{end},Title,,0,0,0,,{{\\an5\\pos({cx},{cy - gap})\\fs{size}\\fsp{round(size * TRACK_START)}\\fad({TITLE_FADE_IN_MS},{TITLE_FADE_OUT_MS})"
+                f"\\blur0.6\\t(0,{length_ms},\\fsp{track})}}{_escape(t.text.upper())}"
+            )
             if t.sub:
                 delay = 450  # the serif arrives after the name, as a title card breathes
-                events.append(f"Dialogue: 1,{_stamp(t.start + delay / 1000)},{end},Serif,,0,0,0,,{{\\an5\\pos({cx},{cy + round(gap * 0.6)})"
-                              f"\\fad({TITLE_FADE_IN_MS},{TITLE_FADE_OUT_MS})\\blur0.5}}{_escape(t.sub)}")
+                events.append(
+                    f"Dialogue: 1,{_stamp(t.start + delay / 1000)},{end},Serif,,0,0,0,,{{\\an5\\pos({cx},{cy + round(gap * 0.6)})"
+                    f"\\fad({TITLE_FADE_IN_MS},{TITLE_FADE_OUT_MS})\\blur0.5}}{_escape(t.sub)}"
+                )
         elif t.kind == "subtitle":
             body = "\\N".join(_escape(line) for line in wrap(t.text))
             events.append(f"Dialogue: 0,{start},{end},Sub,,0,0,0,,{{\\fad({SUB_FADE_MS},{SUB_FADE_MS})\\blur3}}{body}")
@@ -193,13 +202,27 @@ def script(frame: Frame, texts: list[Text], label: str = "") -> str:
     if label:
         last = max((t.end for t in texts), default=1.0)
         events.append(f"Dialogue: 0,{_stamp(0)},{_stamp(last)},Label,,0,0,0,,{_escape(label)}")
-    return "\n".join([
-        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "WrapStyle: 2", "ScaledBorderAndShadow: yes",
-        "YCbCr Matrix: TV.709", "", "[V4+ Styles]",
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
-        "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        *styles, "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text", *events, "",
-    ])
+    return "\n".join(
+        [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            f"PlayResX: {w}",
+            f"PlayResY: {h}",
+            "WrapStyle: 2",
+            "ScaledBorderAndShadow: yes",
+            "YCbCr Matrix: TV.709",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
+            "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            *styles,
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+            *events,
+            "",
+        ]
+    )
 
 
 def reserved(frame: Frame) -> tuple[int, int, int, int]:
@@ -245,13 +268,52 @@ def render(video: str, ass_text: str, output: str, fontsdir: str, ffmpeg: str = 
     with open(ass_path, "w", encoding="utf-8") as f:
         f.write(ass_text)
     try:
-        subprocess.run([ffmpeg, "-v", "error", "-y", "-i", video, "-vf",
-                        f"ass=filename='{_filter_path(ass_path)}':fontsdir='{_filter_path(fontsdir)}'",
-                        "-c:v", "libx264", "-preset", "slow", "-crf", str(crf), "-pix_fmt", "yuv420p", "-c:a", "copy",
-                        "-movflags", "+faststart", output], check=True, capture_output=True, text=True)
+        subprocess.run(
+            [
+                ffmpeg,
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                video,
+                "-vf",
+                f"ass=filename='{_filter_path(ass_path)}':fontsdir='{_filter_path(fontsdir)}'",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "slow",
+                "-crf",
+                str(crf),
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "copy",
+                "-movflags",
+                "+faststart",
+                output,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     finally:
         os.remove(ass_path)
-    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration",
-                            "-of", "csv=p=0:s=x", output], capture_output=True, text=True, check=True).stdout.split()
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height:format=duration",
+            "-of",
+            "csv=p=0:s=x",
+            output,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
     width, height = (int(v) for v in probe[0].split("x")[:2])
     return {"width": width, "height": height, "durationSeconds": round(float(probe[-1]), 3)}

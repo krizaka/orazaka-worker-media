@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+
 def _workspace_root() -> Path | None:
     """The Orazaka workspace (orazaka.workspace.json) this worker is cloned in, if any."""
     for parent in Path(__file__).resolve().parents:
@@ -44,15 +45,7 @@ if WORKSPACE_ROOT is None:
         "the capability seed lives in orazaka-job-service: run inside the Orazaka workspace",
         allow_module_level=True,
     )
-SEED = (
-    WORKSPACE_ROOT
-    / "orazaka-apps"
-    / "services"
-    / "orazaka-job-service"
-    / "infra"
-    / "initdb"
-    / "30-jobs-config.sql"
-)
+SEED = WORKSPACE_ROOT / "orazaka-apps" / "services" / "orazaka-job-service" / "infra" / "initdb" / "30-jobs-config.sql"
 WORKER_YAML = Path(__file__).resolve().parent / "worker.yaml"
 
 #: Which module serves which routing-key prefix. The consumer dispatches on the prefix, so this is
@@ -105,9 +98,7 @@ def _source_for(routing_key: str) -> str:
     """The handler source that serves this routing key."""
     for prefix, modules in HANDLERS.items():
         if routing_key.startswith(prefix):
-            return "\n".join(
-                (Path(__file__).resolve().parent / module).read_text() for module in modules
-            )
+            return "\n".join((Path(__file__).resolve().parent / module).read_text() for module in modules)
     raise AssertionError(f"this worker drains {routing_key} and no module is named for it")
 
 

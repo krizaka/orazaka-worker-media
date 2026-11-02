@@ -1,4 +1,5 @@
 """The sound job end to end, with the generators stubbed: ownership, refusals, outputs, the silent variant."""
+
 import subprocess
 
 import pytest
@@ -15,8 +16,17 @@ def world(tmp_path, monkeypatch):
     root = tmp_path / "uploads"
     out = root / "u1" / "jobA" / "output"
     out.mkdir(parents=True)
-    _ff("-f", "lavfi", "-i", "testsrc=size=320x240:rate=16:duration=3", "-pix_fmt", "yuv420p", "-c:v", "libx264",
-        str(out / "video.mp4"))
+    _ff(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=320x240:rate=16:duration=3",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+        str(out / "video.mp4"),
+    )
     other = root / "u2" / "jobB" / "output"
     other.mkdir(parents=True)
     (other / "video.mp4").write_bytes(b"not yours")
@@ -46,8 +56,9 @@ def job(payload, user="u1", job_id="jobS"):
 
 def test_music_bed_gives_the_clip_sound_and_keeps_a_silent_variant(world):
     root, calls = world
-    result, consumption = consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4",
-                                              "music": "warm lo-fi bed", "seed": "42"}))
+    result, consumption = consumer._sound(
+        job({"video": "/uploads/u1/jobA/output/video.mp4", "music": "warm lo-fi bed", "seed": "42"})
+    )
     assert calls == [("music", "acestep-v15-xl-turbo", "warm lo-fi bed", 42)]
     out = root / "u1" / "jobS" / "output"
     assert sound.probe(str(out / "video.mp4"))["audio"] == "aac"
@@ -62,9 +73,16 @@ def test_a_job_naming_non_commercial_weights_is_refused_in_production(world, mon
     _, calls = world
     monkeypatch.delenv("MEDIA_ALLOW_NON_COMMERCIAL_WEIGHTS", raising=False)
     with pytest.raises(consumer.InvalidJobPayload, match="non-commercial"):
-        consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4", "foley": "tea pouring",
-                             "foleyModel": "mmaudio-large-44k-v2"}))
-    assert calls == []          # refused before any download or generation
+        consumer._sound(
+            job(
+                {
+                    "video": "/uploads/u1/jobA/output/video.mp4",
+                    "foley": "tea pouring",
+                    "foleyModel": "mmaudio-large-44k-v2",
+                }
+            )
+        )
+    assert calls == []  # refused before any download or generation
 
 
 def test_foley_needs_the_non_commercial_model_by_name(world, monkeypatch):
@@ -73,8 +91,11 @@ def test_foley_needs_the_non_commercial_model_by_name(world, monkeypatch):
     with pytest.raises(consumer.InvalidJobPayload, match="foleyModel"):
         consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4", "foley": "tea pouring"}))
     assert calls == []
-    consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4", "foley": "tea pouring",
-                         "foleyModel": "mmaudio-large-44k-v2"}))
+    consumer._sound(
+        job(
+            {"video": "/uploads/u1/jobA/output/video.mp4", "foley": "tea pouring", "foleyModel": "mmaudio-large-44k-v2"}
+        )
+    )
     assert calls[0][:2] == ("foley", "mmaudio-large-44k-v2")
 
 
@@ -106,14 +127,15 @@ def test_a_voice_over_alone_is_enough(world):
     root, _ = world
     voice = root / "u1" / "jobA" / "output" / "voice.wav"
     _ff("-f", "lavfi", "-i", "sine=frequency=500:duration=2:sample_rate=22050", str(voice))
-    result, _ = consumer._sound(job({"video": "/uploads/u1/jobA/output/video.mp4", "voice": "/uploads/u1/jobA/output/voice.wav"}))
+    result, _ = consumer._sound(
+        job({"video": "/uploads/u1/jobA/output/video.mp4", "voice": "/uploads/u1/jobA/output/voice.wav"})
+    )
     assert result["metrics"]["tracks"] == ["voice"]
 
 
 def test_the_asset_url_of_an_earlier_step_resolves_to_the_actors_own_output(world):
     root, _ = world
-    result, _ = consumer._sound(job({"video": "/api/v1/assets/jobA/video.mp4",
-                                     "music": "x"}))
+    result, _ = consumer._sound(job({"video": "/api/v1/assets/jobA/video.mp4", "music": "x"}))
     assert result["url"].endswith("/video.mp4")
 
 
@@ -139,6 +161,7 @@ def test_another_actors_asset_url_is_not_found(world):
 
 def test_asset_url_parsing_accepts_two_words_and_nothing_else():
     from app import asset_sink
+
     assert asset_sink.parse_asset_url("/api/v1/assets/abc-1/video.mp4") == ("abc-1", "video.mp4")
     for bad in ("/api/v1/assets/../x/video.mp4", "/api/v1/assets/a/b/c.mp4", "/uploads/u/j/output/v.mp4", ""):
         assert asset_sink.parse_asset_url(bad) is None
@@ -150,7 +173,7 @@ def test_the_sound_queue_is_consumed_only_where_the_host_says_so():
     assert not consumer.sound_enabled({"MEDIA_SOUND_ENABLED": "false"})
     assert consumer.SOUND_QUEUE != consumer.VIDEO_QUEUE
     shared, sound = consumer.split_bindings(["job.video.*", "job.compose.*", "job.sound.*"], False)
-    assert shared == ["job.video.*", "job.compose.*"] and sound == []   # declared, but neither bound nor registered here
+    assert shared == ["job.video.*", "job.compose.*"] and sound == []  # declared, but neither bound nor registered here
     shared, sound = consumer.split_bindings(["job.video.*", "job.compose.*", "job.sound.*"], True)
     assert shared == ["job.video.*", "job.compose.*"] and sound == ["job.sound.*"]
     assert "job.sound.*" not in consumer.BINDINGS
@@ -175,10 +198,16 @@ def test_a_published_clip_is_read_only_from_the_platforms_cdn(monkeypatch, tmp_p
             return b"mp4-bytes"
 
     monkeypatch.setattr(consumer.urllib.request, "urlopen", lambda url, timeout=0: seen.append(url) or Reply())
-    ok = consumer._fetch_published("https://krizaka-assets.b-cdn.net/site/products/orazaka/gallery-video/tea-pour.c41.mp4", str(tmp_path))
+    ok = consumer._fetch_published(
+        "https://krizaka-assets.b-cdn.net/site/products/orazaka/gallery-video/tea-pour.c41.mp4", str(tmp_path)
+    )
     assert ok and open(ok, "rb").read() == b"mp4-bytes"
-    for bad in ("http://krizaka-assets.b-cdn.net/x.mp4", "https://evil.example/x.mp4",
-                "https://krizaka-assets.b-cdn.net@evil.example/x.mp4", "https://u:p@krizaka-assets.b-cdn.net/x.mp4",
-                "file:///etc/passwd"):
+    for bad in (
+        "http://krizaka-assets.b-cdn.net/x.mp4",
+        "https://evil.example/x.mp4",
+        "https://krizaka-assets.b-cdn.net@evil.example/x.mp4",
+        "https://u:p@krizaka-assets.b-cdn.net/x.mp4",
+        "file:///etc/passwd",
+    ):
         assert consumer._fetch_published(bad, str(tmp_path)) is None
     assert len(seen) == 1

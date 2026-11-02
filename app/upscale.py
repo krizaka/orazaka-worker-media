@@ -5,6 +5,7 @@ upscaler is a pinned checkout of the SeedVR2 video upscaler (`SEEDVR2_HOME`) run
 (`SEEDVR2_PYTHON`) so its dependencies never touch the generation venv; its weights live under `<models>/seedvr2`.
 Measured on an H100 80 GB (docs/_generated/MEASURED_RUNS.md): ~1 min for a 5 s clip to 1080p, ~6 min to 4K.
 """
+
 from __future__ import annotations
 
 import os
@@ -53,7 +54,23 @@ def batch_size(env) -> int:
 
 
 def _size(path: str, run) -> tuple[int, int]:
-    out = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", path], capture_output=True, text=True, check=True).stdout
+    out = run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0",
+            path,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
     width, height = out.strip().split(",")[:2]
     return int(width), int(height)
 
@@ -78,17 +95,57 @@ def upscale(source: str, target_key: str, roots, run=subprocess.run, env=os.envi
     with tempfile.TemporaryDirectory(prefix=".orazaka-upscale-", dir=os.path.dirname(resolved)) as scratch:
         raw = os.path.join(scratch, "seedvr2.mp4")
         run(
-            [python, os.path.join(home, "inference_cli.py"), resolved, "--output", raw, "--resolution", str(min(width, height)), "--dit_model", DIT,
-             "--model_dir", models, "--batch_size", str(batch_size(env)), "--attention_mode", "sdpa", "--color_correction", "lab", "--output_format", "mp4",
-             *(["--vae_encode_tiled", "--vae_decode_tiled"] if min(width, height) > 1080 else [])],
-            check=True, cwd=home,
+            [
+                python,
+                os.path.join(home, "inference_cli.py"),
+                resolved,
+                "--output",
+                raw,
+                "--resolution",
+                str(min(width, height)),
+                "--dit_model",
+                DIT,
+                "--model_dir",
+                models,
+                "--batch_size",
+                str(batch_size(env)),
+                "--attention_mode",
+                "sdpa",
+                "--color_correction",
+                "lab",
+                "--output_format",
+                "mp4",
+                *(["--vae_encode_tiled", "--vae_decode_tiled"] if min(width, height) > 1080 else []),
+            ],
+            check=True,
+            cwd=home,
         )
         final = os.path.join(scratch, "final.mp4")
         # SeedVR2 keeps the source's aspect (LTX's 1216x704 is a little narrower than 16:9, Wan's 1280x704 a little wider): scale to cover the
         # frame, then cut what overhangs — never a crop larger than the picture.
         run(
-            ["ffmpeg", "-v", "error", "-y", "-i", raw, "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,crop={width}:{height}", "-c:v", "libx264", "-crf", "16",
-             "-preset", "slow", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", final],
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                raw,
+                "-vf",
+                f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=lanczos,crop={width}:{height}",
+                "-c:v",
+                "libx264",
+                "-crf",
+                "16",
+                "-preset",
+                "slow",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                "-an",
+                final,
+            ],
             check=True,
         )
         os.replace(final, resolved)

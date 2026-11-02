@@ -10,6 +10,7 @@ Layout under ``MEDIA_MODELS_DIR`` (``/models``): ``hf/`` is the Hugging Face cac
 the Wan pipelines load from with ``local_files_only``; ``sd/`` holds the sd-server files at the
 paths of the recipe.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -109,7 +110,9 @@ def fetch(profile: str, models_dir: Path) -> None:
     """Everything a profile needs, on the volume."""
     from huggingface_hub import snapshot_download  # noqa: PLC0415 — only the GPU image has it
 
-    snapshot_dir = model_cache.local_snapshot  # by layout: the files fetched are only the model's, which the hub calls incomplete
+    snapshot_dir = (
+        model_cache.local_snapshot
+    )  # by layout: the files fetched are only the model's, which the hub calls incomplete
 
     work = plan(profile)
     hf_home = models_dir / "hf"
@@ -126,7 +129,9 @@ def fetch(profile: str, models_dir: Path) -> None:
         )
         print(f"[fetch] {repo} ready in {time.time() - started:.0f}s", flush=True)
         # The model-cache contract: size + SHA-256 per file beside the snapshot (app/model_cache.py).
-        snapshot = Path(snapshot_dir(repo, revision, cache_dir=str((scratch if cache == "scratch" else hf_home) / "hub")))
+        snapshot = Path(
+            snapshot_dir(repo, revision, cache_dir=str((scratch if cache == "scratch" else hf_home) / "hub"))
+        )
         if model_cache.verify(snapshot):
             model_cache.write_manifest(snapshot)
     for spec in work["files"]:
@@ -137,7 +142,14 @@ def verify_profile(profile: str, models_dir: Path, deep: bool = False) -> list[s
     """``--verify``: every snapshot of the profile against its manifest (sizes, or digests with ``--deep``)."""
     problems = []
     for repo, revision, _patterns, cache in plan(profile)["hf"]:
-        hub = str(((Path(os.environ.get("MEDIA_SCRATCH_DIR", "/var/lib/orazaka-scratch")) / "hf") if cache == "scratch" else models_dir / "hf") / "hub")
+        hub = str(
+            (
+                (Path(os.environ.get("MEDIA_SCRATCH_DIR", "/var/lib/orazaka-scratch")) / "hf")
+                if cache == "scratch"
+                else models_dir / "hf"
+            )
+            / "hub"
+        )
         try:
             snapshot = model_cache.local_snapshot(repo, revision, hub)
         except FileNotFoundError as absent:
@@ -150,7 +162,11 @@ def verify_profile(profile: str, models_dir: Path, deep: bool = False) -> list[s
 def main(argv: list[str]) -> int:
     if len(argv) >= 2 and argv[1] == "--verify":
         models_dir = Path(os.environ.get("MEDIA_MODELS_DIR", "/models"))
-        problems = verify_profile(argv[2], models_dir, deep="--deep" in argv[3:]) if len(argv) >= 3 else ["usage: --verify <profile> [--deep]"]
+        problems = (
+            verify_profile(argv[2], models_dir, deep="--deep" in argv[3:])
+            if len(argv) >= 3
+            else ["usage: --verify <profile> [--deep]"]
+        )
         print("\n".join(problems) or f"[fetch] profile {argv[2]} verified", flush=True)
         return 1 if problems else 0
     if len(argv) != 2:

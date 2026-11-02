@@ -1,4 +1,5 @@
 """The cut of a cinematic short (app/cut.py): the edit is checked, the graph and the LUT are pure, ffmpeg makes it."""
+
 from __future__ import annotations
 
 import json
@@ -15,8 +16,16 @@ TWO = {
     "grade": "teal-orange",
     "shots": [
         {"clip": 0, "in": 0, "out": 2, "caption": "Night falls on the city"},
-        {"clip": 1, "in": 0.5, "out": 2.5, "transition": "flash", "transitionSeconds": 0.3, "rampAt": 1.5,
-         "rampSpeed": 0.5, "zoom": 1.1},
+        {
+            "clip": 1,
+            "in": 0.5,
+            "out": 2.5,
+            "transition": "flash",
+            "transitionSeconds": 0.3,
+            "rampAt": 1.5,
+            "rampSpeed": 0.5,
+            "zoom": 1.1,
+        },
     ],
     "titles": [{"text": "NIGHTFALL", "start": 0.2, "end": 1.5, "style": "hero"}],
 }
@@ -197,20 +206,43 @@ class TestFfmpegMakesTheFilm(unittest.TestCase):
             clips = []
             for i, colour in enumerate(("red", "blue")):
                 path = os.path.join(work, f"c{i}.mp4")
-                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
-                                f"testsrc2=size=360x640:rate=16:duration=3,hue=s=1,drawbox=c={colour}:t=40",
-                                "-pix_fmt", "yuv420p", path], check=True)
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-loglevel",
+                        "error",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        f"testsrc2=size=360x640:rate=16:duration=3,hue=s=1,drawbox=c={colour}:t=40",
+                        "-pix_fmt",
+                        "yuv420p",
+                        path,
+                    ],
+                    check=True,
+                )
                 clips.append(path)
             out = os.path.join(work, "film.mp4")
             edit = cut.parse_edit({**TWO, "interpolate": False, "sfx": True, "ambience": "rain"}, 2)
             measured = cut.cut(clips, edit, out, font=cut.find_font())
             self.assertEqual((1080, 1920), (measured["width"], measured["height"]))
             self.assertAlmostEqual(cut.timeline(edit)[-1][1], measured["durationSeconds"], delta=0.25)
-            probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json",
-                                               out], capture_output=True, text=True, check=True).stdout)
+            probe = json.loads(
+                subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json", out],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout
+            )
             self.assertIn("AI-generated", probe["format"]["tags"]["comment"])
-            streams = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", out],
-                                     capture_output=True, text=True, check=True).stdout.split()
+            streams = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", out],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.split()
             self.assertEqual(["video", "audio"], streams)  # the synthesized foley is the film's own sound
 
 
@@ -228,21 +260,27 @@ class TestTheCutFetchesUploadedClips(unittest.TestCase):
         from app import consumer
 
         asset = "0b6f2a52-1c1e-4c84-9a8e-2f6b2b1d9a10"
-        job = {"jobId": "j1", "userId": "u1", "payload": {"clips": [asset], "edit": json.dumps({"shots": [{"clip": 0, "out": 2}]})}}
+        job = {
+            "jobId": "j1",
+            "userId": "u1",
+            "payload": {"clips": [asset], "edit": json.dumps({"shots": [{"clip": 0, "out": 2}]})},
+        }
         fetched = []
 
         def fake_fetch(job_arg, target, asset=None):
             fetched.append((job_arg["jobId"], asset))
             return target
 
-        with tempfile.TemporaryDirectory() as root, \
-                patch.object(consumer.asset_sink, "sink_url", return_value="http://job-service"), \
-                patch.object(consumer.asset_sink, "fetch_image", side_effect=fake_fetch), \
-                patch.object(consumer, "_upload_root", return_value=root), \
-                patch.object(consumer, "_materialise", side_effect=lambda path, scratch: path), \
-                patch.object(consumer.film, "cut", return_value={"durationSeconds": 2.0, "width": 1080, "height": 1920}), \
-                patch.object(consumer, "_store", return_value="/api/v1/assets/j1/video.mp4"), \
-                patch.object(consumer, "send_progress_update"):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.object(consumer.asset_sink, "sink_url", return_value="http://job-service"),
+            patch.object(consumer.asset_sink, "fetch_image", side_effect=fake_fetch),
+            patch.object(consumer, "_upload_root", return_value=root),
+            patch.object(consumer, "_materialise", side_effect=lambda path, scratch: path),
+            patch.object(consumer.film, "cut", return_value={"durationSeconds": 2.0, "width": 1080, "height": 1920}),
+            patch.object(consumer, "_store", return_value="/api/v1/assets/j1/video.mp4"),
+            patch.object(consumer, "send_progress_update"),
+        ):
             result, _ = consumer._cut(job)
         self.assertEqual([("j1", asset)], fetched)
         self.assertEqual("/api/v1/assets/j1/video.mp4", result["url"])

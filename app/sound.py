@@ -11,6 +11,7 @@ deliberately two things kept apart:
 
 Nothing here reaches a network or a database.
 """
+
 from __future__ import annotations
 
 import json
@@ -63,8 +64,9 @@ class Tracks:
     voice: str | None = None
 
     def present(self) -> list[tuple[str, str]]:
-        return [(name, path) for name, path in
-                (("foley", self.foley), ("music", self.music), ("voice", self.voice)) if path]
+        return [
+            (name, path) for name, path in (("foley", self.foley), ("music", self.music), ("voice", self.voice)) if path
+        ]
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess:
@@ -73,9 +75,18 @@ def _run(command: list[str]) -> subprocess.CompletedProcess:
 
 def probe(path: str) -> dict:
     """Duration, whether there is a picture, and the audio codec if there is a sound — read from the file."""
-    out = _run(["ffprobe", "-v", "error", "-show_entries",
-                "format=duration:stream=codec_type,codec_name,width,height",
-                "-of", "json", path]).stdout
+    out = _run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration:stream=codec_type,codec_name,width,height",
+            "-of",
+            "json",
+            path,
+        ]
+    ).stdout
     data = json.loads(out)
     streams = data.get("streams", [])
     video = next((s for s in streams if s.get("codec_type") == "video"), None)
@@ -107,8 +118,10 @@ def _conform(label_in: str, label_out: str, seconds: float, db: float, bed: bool
     ]
     if bed:
         fade_out = min(FADE_OUT_S, seconds / 2)
-        chain += [f"afade=t=in:st=0:d={min(FADE_IN_S, seconds / 4):.3f}",
-                  f"afade=t=out:st={max(seconds - fade_out, 0):.3f}:d={fade_out:.3f}"]
+        chain += [
+            f"afade=t=in:st=0:d={min(FADE_IN_S, seconds / 4):.3f}",
+            f"afade=t=out:st={max(seconds - fade_out, 0):.3f}:d={fade_out:.3f}",
+        ]
     chain.append(f"apad=whole_dur={seconds:.3f}")
     return f"[{label_in}]" + ",".join(chain) + f"[{label_out}]"
 
@@ -145,8 +158,10 @@ def mix_graph(tracks: Tracks, seconds: float) -> tuple[str, list[str]]:
     if has_voice and bed:
         # The voice is the sidechain that lowers the bed, and is also heard: split it.
         parts.append("[voice]asplit=2[voice_key][voice_main]")
-        parts.append(f"[bed][voice_key]sidechaincompress=threshold={DUCK_THRESHOLD}:ratio={DUCK_RATIO}"
-                     f":attack={DUCK_ATTACK_MS}:release={DUCK_RELEASE_MS}[ducked]")
+        parts.append(
+            f"[bed][voice_key]sidechaincompress=threshold={DUCK_THRESHOLD}:ratio={DUCK_RATIO}"
+            f":attack={DUCK_ATTACK_MS}:release={DUCK_RELEASE_MS}[ducked]"
+        )
         parts.append("[ducked][voice_main]amix=inputs=2:normalize=0:duration=longest[mix]")
     elif has_voice:
         parts.append("[voice]anull[mix]")
@@ -159,9 +174,11 @@ def _loudnorm_filter(measured: dict | None) -> str:
     base = f"loudnorm=I={TARGET_LUFS}:TP={TRUE_PEAK_DB}:LRA={LOUDNESS_RANGE}"
     if not measured:
         return base
-    return (base + f":measured_I={measured['input_i']}:measured_TP={measured['input_tp']}"
-            f":measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}"
-            f":offset={measured['target_offset']}:linear=true")
+    return (
+        base + f":measured_I={measured['input_i']}:measured_TP={measured['input_tp']}"
+        f":measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}"
+        f":offset={measured['target_offset']}:linear=true"
+    )
 
 
 _JSON_BLOCK = re.compile(r"\{[^{}]*\}", re.DOTALL)
@@ -169,9 +186,18 @@ _JSON_BLOCK = re.compile(r"\{[^{}]*\}", re.DOTALL)
 
 def measure_loudnorm(path: str) -> dict:
     """First loudnorm pass: the file's integrated loudness, true peak, range, threshold and offset."""
-    command = ["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-af",
-               f"loudnorm=I={TARGET_LUFS}:TP={TRUE_PEAK_DB}:LRA={LOUDNESS_RANGE}:print_format=json",
-               "-f", "null", "-"]
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostats",
+        "-i",
+        path,
+        "-af",
+        f"loudnorm=I={TARGET_LUFS}:TP={TRUE_PEAK_DB}:LRA={LOUDNESS_RANGE}:print_format=json",
+        "-f",
+        "null",
+        "-",
+    ]
     err = _run(command).stderr
     blocks = _JSON_BLOCK.findall(err)
     if not blocks:
@@ -181,8 +207,9 @@ def measure_loudnorm(path: str) -> dict:
 
 def integrated_loudness(path: str) -> float:
     """Integrated loudness of a file's audio in LUFS (EBU R128), read from the file."""
-    err = _run(["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-vn", "-af", "ebur128=peak=true",
-                "-f", "null", "-"]).stderr
+    err = _run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"]
+    ).stderr
     found = re.findall(r"I:\s+(-?\d+(?:\.\d+)?)\s+LUFS", err)
     if not found:
         raise RuntimeError("ebur128 printed no integrated loudness")
@@ -192,8 +219,23 @@ def integrated_loudness(path: str) -> float:
 def split_silent(video: str, silent_path: str) -> str:
     """Keeps the silent variant: the picture alone, copied bit for bit (no re-encode), for muted loops."""
     os.makedirs(os.path.dirname(os.path.abspath(silent_path)), exist_ok=True)
-    _run(["ffmpeg", "-y", "-hide_banner", "-i", video, "-map", "0:v:0", "-an", "-c:v", "copy",
-          "-movflags", "+faststart", silent_path])
+    _run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-i",
+            video,
+            "-map",
+            "0:v:0",
+            "-an",
+            "-c:v",
+            "copy",
+            "-movflags",
+            "+faststart",
+            silent_path,
+        ]
+    )
     return silent_path
 
 
@@ -241,19 +283,48 @@ def add_sound(video: str, tracks: Tracks, output_path: str, silent_path: str | N
         _run(command)
 
         measured = measure_loudnorm(mixed)
-        _run(["ffmpeg", "-y", "-hide_banner", "-i", video, "-i", mixed, "-map", "0:v:0", "-map", "1:a:0",
-              "-c:v", "copy", "-af", _loudnorm_filter(measured), "-ar", str(SAMPLE_RATE),
-              "-c:a", "aac", "-b:a", "192k", "-t", f"{seconds:.3f}", "-movflags", "+faststart", output_path])
+        _run(
+            [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-i",
+                video,
+                "-i",
+                mixed,
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "copy",
+                "-af",
+                _loudnorm_filter(measured),
+                "-ar",
+                str(SAMPLE_RATE),
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-t",
+                f"{seconds:.3f}",
+                "-movflags",
+                "+faststart",
+                output_path,
+            ]
+        )
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
     silent = split_silent(video, silent_path or silent_path_for(output_path))
     result = probe(output_path)
-    result.update({
-        "loudnessLufs": round(integrated_loudness(output_path), 2),
-        "targetLufs": TARGET_LUFS,
-        "tracks": order,
-        "silentPath": silent,
-        "sourceHadAudio": source["audio"] is not None,
-    })
+    result.update(
+        {
+            "loudnessLufs": round(integrated_loudness(output_path), 2),
+            "targetLufs": TARGET_LUFS,
+            "tracks": order,
+            "silentPath": silent,
+            "sourceHadAudio": source["audio"] is not None,
+        }
+    )
     return result

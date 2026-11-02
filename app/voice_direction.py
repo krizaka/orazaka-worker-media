@@ -10,6 +10,7 @@ A line is said in **phrases** (split at its ellipses, commas and colons — wher
 the line's emotion and rate; a phrase that holds an emphasised word is said a little slower with more pitch movement;
 each break gets the pause its punctuation asks; the line ends on its ``pauseAfter``. :func:`plan` is the whole decision.
 """
+
 from __future__ import annotations
 
 import re
@@ -94,7 +95,9 @@ def phrases(text: str) -> list[tuple[str, float]]:
 
 def plan(text: str, direction: dict) -> list[Phrase]:
     """A line and its direction as the phrases a speech model says (pure)."""
-    text = text.replace("’", "'")  # the phonemizer reads a typographic apostrophe as a break (« on t’aide » → « on tête »)
+    text = text.replace(
+        "’", "'"
+    )  # the phonemizer reads a typographic apostrophe as a break (« on t’aide » → « on tête »)
     emotion = emotion_vector(direction.get("emotion", ""))
     rate = RATES.get(direction.get("pace", "measured"), RATES["measured"])
     emphasis = [e.lower() for e in direction.get("emphasis", [])]
@@ -103,7 +106,13 @@ def plan(text: str, direction: dict) -> list[Phrase]:
     for k, (phrase, pause) in enumerate(parts):
         stressed = any(e in phrase.lower() for e in emphasis)
         last = k == len(parts) - 1
-        out.append(Phrase(phrase, emotion, round(rate * (EMPHASIS_RATE if stressed else 1.0), 2),
-                          round(PITCH_STD * (EMPHASIS_PITCH if stressed else 1.0), 1),
-                          float(direction.get("pauseAfter", 0.3)) if last else pause))
+        out.append(
+            Phrase(
+                phrase,
+                emotion,
+                round(rate * (EMPHASIS_RATE if stressed else 1.0), 2),
+                round(PITCH_STD * (EMPHASIS_PITCH if stressed else 1.0), 1),
+                float(direction.get("pauseAfter", 0.3)) if last else pause,
+            )
+        )
     return out

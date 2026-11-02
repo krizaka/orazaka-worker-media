@@ -5,6 +5,7 @@
 ``python -m app.measure render <model> --steps N --seed S --out DIR`` makes one clip (fixed prompt and seed, so before
 and after compare) and prints the render seconds. Nothing here changes the worker's behaviour.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,7 +54,9 @@ def parse_accel(value: str) -> tuple[str, ...]:
     return tuple(a for a in ACCELERATIONS if a in names)
 
 
-def apply_acceleration(pipe, accel: tuple[str, ...], threshold: float, *, fp8_dtype=None, cache_config=None, compute_dtype=None) -> None:
+def apply_acceleration(
+    pipe, accel: tuple[str, ...], threshold: float, *, fp8_dtype=None, cache_config=None, compute_dtype=None
+) -> None:
     """Applies diffusers' own accelerations to the resident Wan transformer (nothing here changes the worker).
 
     ``fp8``: layerwise casting, the weights kept in float8 (E4M3) and upcast to bf16 per layer, which halves the
@@ -69,7 +72,14 @@ def apply_acceleration(pipe, accel: tuple[str, ...], threshold: float, *, fp8_dt
 def result_line(mode: str, model: str, seconds: float, size_bytes: int, extra: dict | None = None) -> str:
     gbps = round(size_bytes / 1e9 / seconds, 2) if seconds > 0 else 0.0
     return json.dumps(
-        {"mode": mode, "model": model, "seconds": round(seconds, 2), "gb": round(size_bytes / 1e9, 2), "gbPerSecond": gbps, **(extra or {})},
+        {
+            "mode": mode,
+            "model": model,
+            "seconds": round(seconds, 2),
+            "gb": round(size_bytes / 1e9, 2),
+            "gbPerSecond": gbps,
+            **(extra or {}),
+        },
         sort_keys=True,
     )
 
@@ -159,7 +169,9 @@ def measure_load(model_name: str, mode: str) -> str:
     return result_line(mode, model_name, seconds, size)
 
 
-def measure_render(model_name: str, steps: int, seed: int, out: Path, accel: tuple[str, ...] = (), threshold: float = 0.2) -> str:
+def measure_render(
+    model_name: str, steps: int, seed: int, out: Path, accel: tuple[str, ...] = (), threshold: float = 0.2
+) -> str:
     from app import wan_generator  # noqa: PLC0415
     from app.video_models import find  # noqa: PLC0415
 
@@ -171,7 +183,14 @@ def measure_render(model_name: str, steps: int, seed: int, out: Path, accel: tup
         import torch  # noqa: PLC0415
         from diffusers import FirstBlockCacheConfig  # noqa: PLC0415
 
-        apply_acceleration(pipe, accel, threshold, fp8_dtype=torch.float8_e4m3fn, cache_config=FirstBlockCacheConfig, compute_dtype=torch.bfloat16)
+        apply_acceleration(
+            pipe,
+            accel,
+            threshold,
+            fp8_dtype=torch.float8_e4m3fn,
+            cache_config=FirstBlockCacheConfig,
+            compute_dtype=torch.bfloat16,
+        )
     try:
         import torch  # noqa: PLC0415
 
@@ -181,9 +200,7 @@ def measure_render(model_name: str, steps: int, seed: int, out: Path, accel: tup
     except ImportError:
         pass
     started = time.time()
-    frames = wan_generator.generate_wan_frames(
-        model_name, PROMPT, width, height, model.max_frames, steps, seed
-    )
+    frames = wan_generator.generate_wan_frames(model_name, PROMPT, width, height, model.max_frames, steps, seed)
     seconds = time.time() - started
     out.mkdir(parents=True, exist_ok=True)
     label = "+".join(accel) or "none"
@@ -209,7 +226,9 @@ def main(argv: list[str]) -> int:
     render.add_argument("model")
     render.add_argument("--steps", type=int, default=20)
     render.add_argument("--seed", type=int, default=7)
-    render.add_argument("--out", type=Path, default=None, help="output directory (default: a fresh private temp directory)")
+    render.add_argument(
+        "--out", type=Path, default=None, help="output directory (default: a fresh private temp directory)"
+    )
     render.add_argument("--accel", default="none", help="none | fp8 | firstblock | fp8+firstblock")
     render.add_argument("--threshold", type=float, default=0.2, help="FirstBlockCache threshold")
     args = parser.parse_args(argv)

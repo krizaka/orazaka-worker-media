@@ -14,6 +14,7 @@ Configuration, by bounded context (never a vendor name): ``AI_INFERENCE_URL`` (d
 
 §12 Zero-Fallback: a refusal, a failed job or a timeout raises. Nothing here returns a placeholder clip.
 """
+
 from __future__ import annotations
 
 import json
@@ -148,7 +149,10 @@ def probe_duration(path: str) -> float | None:
     try:
         out = subprocess.run(  # noqa: S603 — a fixed binary on a file this worker just wrote
             [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
-            capture_output=True, text=True, timeout=30, check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
         ).stdout.strip()
         return round(float(out), 2)
     except (OSError, ValueError, subprocess.SubprocessError):

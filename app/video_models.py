@@ -7,6 +7,7 @@ here, apart from any pipeline, and is tested without a GPU.
 
 The catalogue (``orazaka_models``) chooses the model; this module only knows how each one is shaped.
 """
+
 from __future__ import annotations
 
 import os
@@ -115,9 +116,7 @@ class VideoModel:
             return w, h
         ratio = normalise_aspect(aspect)
         if ratio not in self.sizes:
-            raise UnsupportedAspect(
-                f"model '{self.name}' makes {', '.join(sorted(self.sizes))}, not {ratio}"
-            )
+            raise UnsupportedAspect(f"model '{self.name}' makes {', '.join(sorted(self.sizes))}, not {ratio}")
         w, h = self.sizes[ratio]
         return int(w), int(h)
 

@@ -15,27 +15,27 @@ except ImportError:
 # AGENTS.md §6 topology: job lifecycle events go to the orazaka.events topic
 # exchange with the key job.{jobId}.progress|done|error. This worker duplicates
 # the contract subset it publishes (no shared jar across the service boundary).
-EVENTS_EXCHANGE = 'orazaka.events'
+EVENTS_EXCHANGE = "orazaka.events"
 
 
 def _publish_job_event(routing_key: str, payload: dict) -> None:
     try:
         connection = pika.BlockingConnection(broker.connection_parameters())
         channel = connection.channel()
-        channel.exchange_declare(exchange=EVENTS_EXCHANGE, exchange_type='topic', durable=True)
+        channel.exchange_declare(exchange=EVENTS_EXCHANGE, exchange_type="topic", durable=True)
         message = json.dumps(payload)
         channel.basic_publish(
             exchange=EVENTS_EXCHANGE,
             routing_key=routing_key,
             body=message,
             properties=pika.BasicProperties(
-                content_type='application/json',
+                content_type="application/json",
                 delivery_mode=2,
                 # spring-amqp 4.0.0 (Boot 4) SimpleAmqpHeaderMapper.toHeaders NPEs on a
                 # null AMQP priority; set an explicit 0 so the router's event consumer
                 # doesn't log a stack trace per event.
-                priority=0
-            )
+                priority=0,
+            ),
         )
         connection.close()
         print(f"Sent AMQP job event {routing_key}: {message}", flush=True)
@@ -48,7 +48,15 @@ PHASES = ("queued", "loading", "generating", "encoding", "uploading")
 
 
 def progress_payload(
-    job_id: str, progress: int, phase=None, step=None, steps=None, stage=None, weights_percent=None, eta_seconds=None, at=None
+    job_id: str,
+    progress: int,
+    phase=None,
+    step=None,
+    steps=None,
+    stage=None,
+    weights_percent=None,
+    eta_seconds=None,
+    at=None,
 ) -> dict:
     """The progress event: the percentage, and — when known — the phase, the step n of N and the stage.
 
@@ -72,7 +80,15 @@ def progress_payload(
 
 
 def send_progress_update(
-    job_id: str, progress: int, phase=None, step=None, steps=None, stage=None, weights_percent=None, eta_seconds=None, at=None
+    job_id: str,
+    progress: int,
+    phase=None,
+    step=None,
+    steps=None,
+    stage=None,
+    weights_percent=None,
+    eta_seconds=None,
+    at=None,
 ) -> None:
     _publish_job_event(
         f"job.{job_id}.progress",
@@ -163,9 +179,7 @@ def send_job_error(job_id: str, error: str, hold_id=None, cause: str = EXECUTOR_
     declared = cause if cause in FAILURE_CAUSES else EXECUTOR_FAULT
     _publish_job_event(
         f"job.{job_id}.error",
-        _with_reservation(
-            {"jobId": job_id, "error": str(error), "cause": declared}, hold_id
-        ),
+        _with_reservation({"jobId": job_id, "error": str(error), "cause": declared}, hold_id),
     )
 
 
@@ -175,7 +189,14 @@ def send_job_error(job_id: str, error: str, hold_id=None, cause: str = EXECUTOR_
 # executors that report a frame count and no duration, and are no longer why the composer forces
 # a constant rate.
 CONSUMPTION_KEYS = (
-    "gpuSeconds", "durationSeconds", "frames", "fps", "images", "steps", "width", "height",
+    "gpuSeconds",
+    "durationSeconds",
+    "frames",
+    "fps",
+    "images",
+    "steps",
+    "width",
+    "height",
 )
 
 
@@ -190,6 +211,7 @@ def extract_consumption(metrics: dict) -> dict:
         return {}
     return {k: metrics[k] for k in CONSUMPTION_KEYS if metrics.get(k) is not None}
 
+
 @contextmanager
 def resource_guard(process):
     """
@@ -202,20 +224,25 @@ def resource_guard(process):
         yield metrics
     finally:
         gc.collect()
-        if torch and hasattr(torch, "backends") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        if (
+            torch
+            and hasattr(torch, "backends")
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
             try:
                 torch.mps.empty_cache()
             except Exception:  # noqa: S110
                 # Best-effort hint to the allocator. A failed cache flush must never turn a
                 # successful generation into a failed telemetry write.
                 pass
-            
+
         end_time = time.time()
         end_mem = process.memory_info().rss if process else 0
         gpu_allocated_mb = 0.0
         if torch and torch.cuda.is_available():
             gpu_allocated_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
-            
+
         metrics["inference_time_sec"] = round(end_time - start_time, 2)
         metrics["peak_memory_rss_mb"] = round(end_mem / (1024 * 1024), 2)
         metrics["gpu_allocated_mb"] = round(gpu_allocated_mb, 2)

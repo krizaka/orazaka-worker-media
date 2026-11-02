@@ -1,4 +1,5 @@
 """A clip goes straight to the pod's own output zone (krizaka-internal#2149), never with a site credential."""
+
 from __future__ import annotations
 
 import os
@@ -63,9 +64,15 @@ class TestTheZone(unittest.TestCase):
     def test_the_store_writes_the_zone_before_the_sink(self):
         order = []
         path = self._clip()
-        with mock.patch.object(consumer.gpu_out, "put", side_effect=lambda *a, **k: order.append("zone")), \
-                mock.patch.object(consumer.asset_sink, "sink_url", return_value="http://core"), \
-                mock.patch.object(consumer.asset_sink, "upload", side_effect=lambda *a, **k: order.append("sink") or "/api/v1/assets/j/video.mp4"):
+        with (
+            mock.patch.object(consumer.gpu_out, "put", side_effect=lambda *a, **k: order.append("zone")),
+            mock.patch.object(consumer.asset_sink, "sink_url", return_value="http://core"),
+            mock.patch.object(
+                consumer.asset_sink,
+                "upload",
+                side_effect=lambda *a, **k: order.append("sink") or "/api/v1/assets/j/video.mp4",
+            ),
+        ):
             url = consumer._store(path, JOB, "video.mp4", "video/mp4", "/uploads/x")
         self.assertEqual(order, ["zone", "sink"])
         self.assertEqual(url, "/api/v1/assets/j/video.mp4")

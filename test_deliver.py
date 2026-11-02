@@ -1,6 +1,7 @@
 """A film's master and its deliverables (orazaka#259): the cut can make a 4K master (SeedVR2 to 2160p, tiled) without
 text, and app/deliver.py makes the 1080p and 9:16 cuts from it, reframed shot by shot, with the captions and the label
 drawn per language after the reframe, so no caption is ever cropped."""
+
 from __future__ import annotations
 
 import os
@@ -47,7 +48,9 @@ class TestTheMaster(unittest.TestCase):
         edit = cut.parse_edit(EDIT, 2)
         self.assertEqual(cut.overlay_filters(edit, cut.timeline(edit), "/f.ttf", "/tmp"), ["null"])
         with_text = cut.parse_edit({**EDIT, "text": True}, 2)
-        self.assertTrue(any("drawtext" in f for f in cut.overlay_filters(with_text, cut.timeline(with_text), "/f.ttf", "/tmp")))
+        self.assertTrue(
+            any("drawtext" in f for f in cut.overlay_filters(with_text, cut.timeline(with_text), "/f.ttf", "/tmp"))
+        )
 
 
 class TestTheDeliverables(unittest.TestCase):
@@ -90,11 +93,32 @@ class TestTheDeliverablesAreMade(unittest.TestCase):
         scratch = tempfile.mkdtemp()
         try:
             master = os.path.join(scratch, "master.mp4")
-            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:d=4:r=24", "-pix_fmt", "yuv420p", master], check=True)
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc2=s=1280x720:d=4:r=24",
+                    "-pix_fmt",
+                    "yuv420p",
+                    master,
+                ],
+                check=True,
+            )
             out = os.path.join(scratch, "v.mp4")
-            facts = deliver.deliver(master, out, "9:16", spans=[(0, 2), (2, 4)], centres=[0.3, 0.7],
-                                    texts=[("Le pigeon livre, à chaque fois.", 0.2, 1.8, "caption")], label="Généré par IA",
-                                    font=cut.find_font())
+            facts = deliver.deliver(
+                master,
+                out,
+                "9:16",
+                spans=[(0, 2), (2, 4)],
+                centres=[0.3, 0.7],
+                texts=[("Le pigeon livre, à chaque fois.", 0.2, 1.8, "caption")],
+                label="Généré par IA",
+                font=cut.find_font(),
+            )
             self.assertEqual((facts["width"], facts["height"]), (1080, 1920))
             self.assertAlmostEqual(facts["durationSeconds"], 4.0, delta=0.1)
         finally:

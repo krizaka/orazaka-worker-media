@@ -12,6 +12,26 @@ license = "FSL-1.1-ALv2"
 license-files = ["LICENSE.md", "LICENSE-APACHE", "NOTICE"]
 description = "Media worker — Wan 2.x 9:16 video on CUDA, MLX/Metal on the Mac, ffmpeg composition."
 requires-python = ">=3.11"
+# What the code imports directly (deptry checks it against the imports). The installable sets stay in requirements*.txt.
+dependencies = [
+  "cryptography",
+  "diffusers",
+  "huggingface_hub",
+  "mflux",
+  "numpy",
+  "Pillow",
+  "pika",
+  "psutil",
+  "PyYAML",
+  "safetensors",
+  "soundfile",
+  "torch",
+  "torchaudio",
+  "transformers",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-timeout"]
 
 [tool.ruff]
 line-length = 100
@@ -38,3 +58,16 @@ ignore = [
 testpaths = ["."]
 python_files = ["test_*.py"]
 addopts = "-q"
+
+[tool.deptry]
+known_first_party = ["app"]
+
+[tool.deptry.package_module_name_map]
+Pillow = "PIL"
+PyYAML = "yaml"
+
+[tool.deptry.per_rule_ignores]
+# Models installed from their git repository in the CUDA image (Dockerfile.cuda), not from PyPI.
+DEP001 = ["kokoro", "mmaudio", "zonos"]
+# The test files sit at the repository root, next to the code, so deptry reads them as code.
+DEP004 = ["pytest"]

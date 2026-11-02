@@ -1,4 +1,5 @@
 """The optional video upscale: what is asked, what is refused, the commands it runs (no GPU, no model)."""
+
 from __future__ import annotations
 
 import os
@@ -24,7 +25,9 @@ class Runner:
             return SimpleNamespace(stdout="1280,704\n")
         out = cmd[cmd.index("--output") + 1] if "--output" in cmd else cmd[-1]
         resolved = os.path.realpath(out)
-        if self.root is None or resolved.startswith(self.root + os.sep):  # only ever inside the scratch folders of the test
+        if self.root is None or resolved.startswith(
+            self.root + os.sep
+        ):  # only ever inside the scratch folders of the test
             with open(resolved, "wb") as handle:
                 handle.write(b"upscaled")
         return SimpleNamespace(stdout="")
@@ -74,7 +77,10 @@ class TestUpscale(unittest.TestCase):
         self.assertNotIn("--vae_encode_tiled", seedvr)  # 1080p fits without tiling
         self.assertIn("scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", ffmpeg)
         self.assertEqual(b"upscaled", open(clip, "rb").read())  # replaced in place
-        self.assertEqual({"upscaleModel": "seedvr2-3b", "upscaleFrom": "1280x704", "upscaleTo": "1920x1080", "upscaleSeconds": 61.5}, facts)
+        self.assertEqual(
+            {"upscaleModel": "seedvr2-3b", "upscaleFrom": "1280x704", "upscaleTo": "1920x1080", "upscaleSeconds": 61.5},
+            facts,
+        )
 
     def test_4k_tiles_the_vae_and_leaves_in_3840x2160(self):
         runner = Runner(tempfile.gettempdir())
@@ -156,7 +162,9 @@ class TestShapes(unittest.TestCase):
         # LTX makes 1216x704 (1.73): at 1080 high it is 1865 wide, short of 1920 — the crop would fail, so the scale covers the frame.
         facts, runner = self._run("1216,704", "1080p")
         self.assertEqual("1920x1080", facts["upscaleTo"])
-        self.assertIn("scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", runner.calls[2])
+        self.assertIn(
+            "scale=1920:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1920:1080", runner.calls[2]
+        )
 
 
 class TestPathGuard(unittest.TestCase):
@@ -192,7 +200,12 @@ class TestWiring(unittest.TestCase):
     def test_with_1080p_the_clip_is_upscaled_and_the_metrics_carry_the_new_size_and_the_facts(self):
         from unittest.mock import patch
 
-        facts = {"upscaleModel": "seedvr2-3b", "upscaleFrom": "1280x704", "upscaleTo": "1920x1080", "upscaleSeconds": 66.0}
+        facts = {
+            "upscaleModel": "seedvr2-3b",
+            "upscaleFrom": "1280x704",
+            "upscaleTo": "1920x1080",
+            "upscaleSeconds": 66.0,
+        }
         metrics = {"width": 1280, "height": 704}
         with patch("app.upscale.upscale", return_value=facts) as run:
             self._main().apply_upscale({"upscale": "1080p"}, "/tmp/clip.mp4", metrics)

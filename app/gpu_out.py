@@ -5,6 +5,7 @@ A rented GPU pod dies with its disk and its relay tunnel. The launcher gives it 
 When these are set, each clip is put under ``<GPU_OUT_URL>/<pod>/<jobId>-<file>`` before anything else, so the Mac
 can promote it whatever happens to the tunnel or the pod afterwards.
 """
+
 from __future__ import annotations
 
 import os
@@ -48,7 +49,10 @@ def put(path: str, job: dict, filename: str, content_type: str, env: dict | None
         f"{base}/{pod}/{name}",
         data=data,
         method="PUT",
-        headers={source.get("GPU_OUT_HEADER") or "AccessKey": source["GPU_OUT_KEY"].strip(), "Content-Type": content_type},
+        headers={
+            source.get("GPU_OUT_HEADER") or "AccessKey": source["GPU_OUT_KEY"].strip(),
+            "Content-Type": content_type,
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=300):  # noqa: S310 — see above

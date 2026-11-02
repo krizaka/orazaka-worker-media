@@ -7,6 +7,7 @@ other path is passed through to sd-server, moved behind it (``MEDIA_IMAGE_UPSTRE
 The request is OpenAI's: ``{"model", "input", "voice", "response_format"}``. ``model`` must be one this file serves
 (``kokoro-82m``): another name is refused by name, never answered with a different voice engine.
 """
+
 from __future__ import annotations
 
 import io
@@ -82,8 +83,13 @@ def synthesize(text: str, voice: str, speed: float = 1.0) -> bytes:
 
 
 def to_mp3(wav: bytes) -> bytes:
-    done = subprocess.run(["ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "mp3", "-b:a", "192k", "pipe:1"],
-                          input=wav, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+    done = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "mp3", "-b:a", "192k", "pipe:1"],
+        input=wav,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
     return done.stdout
 
 

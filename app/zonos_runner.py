@@ -6,6 +6,7 @@ espeak stack never share the worker's environment, as MMAudio's does not (``mmau
 ``plan.json`` is ``voice_direction.plan``'s phrases (text, emotion, rate, pitch_std, pause_after). The voice is a
 reference recording of a **synthetic** voice (a Kokoro voice, Apache-2.0) — never a real person's. Writes a 44.1 kHz wav.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,18 +32,27 @@ def main() -> None:
     phrases = json.load(open(args.plan, encoding="utf-8"))
     model = Zonos.from_pretrained(ZONOS_REPO, device="cpu")
     data, rate = soundfile.read(args.voice, dtype="float32")
-    speaker = model.make_speaker_embedding(torch.from_numpy(data if data.ndim == 1 else data.mean(1)).unsqueeze(0), rate)
+    speaker = model.make_speaker_embedding(
+        torch.from_numpy(data if data.ndim == 1 else data.mean(1)).unsqueeze(0), rate
+    )
     out_rate = model.autoencoder.sampling_rate
     pieces = []
     for k, p in enumerate(phrases):
         torch.manual_seed(args.seed + k)
-        cond = make_cond_dict(text=p["text"], speaker=speaker, language=args.language, emotion=list(p["emotion"]),
-                              speaking_rate=p["rate"], pitch_std=p["pitch_std"], device="cpu")
+        cond = make_cond_dict(
+            text=p["text"],
+            speaker=speaker,
+            language=args.language,
+            emotion=list(p["emotion"]),
+            speaking_rate=p["rate"],
+            pitch_std=p["pitch_std"],
+            device="cpu",
+        )
         audio = model.autoencoder.decode(model.generate(model.prepare_conditioning(cond))).cpu()[0].squeeze(0).numpy()
         # Zonos leaves a breath of silence at both ends: trimmed to 60 ms, so the pauses are the direction's own.
         loud = np.flatnonzero(np.abs(audio) > 0.01)
         if loud.size:
-            audio = audio[max(0, loud[0] - int(0.06 * out_rate)): loud[-1] + int(0.06 * out_rate)]
+            audio = audio[max(0, loud[0] - int(0.06 * out_rate)) : loud[-1] + int(0.06 * out_rate)]
         pieces += [audio, np.zeros(int(p["pause_after"] * out_rate), dtype=audio.dtype)]
     soundfile.write(args.out, np.concatenate(pieces), out_rate)
 
