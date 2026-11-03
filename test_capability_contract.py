@@ -45,7 +45,18 @@ if WORKSPACE_ROOT is None:
         "the capability seed lives in orazaka-job-service: run inside the Orazaka workspace",
         allow_module_level=True,
     )
-SEED = WORKSPACE_ROOT / "orazaka-apps" / "services" / "orazaka-job-service" / "src" / "main" / "resources" / "db" / "migration" / "V1__job_baseline.sql"
+SEED = (
+    WORKSPACE_ROOT
+    / "orazaka-apps"
+    / "services"
+    / "orazaka-job-service"
+    / "src"
+    / "main"
+    / "resources"
+    / "db"
+    / "migration"
+    / "V1__job_baseline.sql"
+)
 WORKER_YAML = Path(__file__).resolve().parent / "worker.yaml"
 
 #: Which module serves which routing-key prefix. The consumer dispatches on the prefix, so this is
