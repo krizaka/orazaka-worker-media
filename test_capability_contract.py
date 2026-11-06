@@ -45,17 +45,16 @@ if WORKSPACE_ROOT is None:
         "the capability seed lives in orazaka-job-service: run inside the Orazaka workspace",
         allow_module_level=True,
     )
-SEED = (
-    WORKSPACE_ROOT
-    / "orazaka-apps"
-    / "services"
-    / "orazaka-job-service"
-    / "src"
-    / "main"
-    / "resources"
-    / "db"
-    / "migration"
-    / "V1__job_baseline.sql"
+def _first_existing(*candidates: Path) -> Path:
+    """The Sovkora layout, else the former Orazaka one (the workspace moves folder by folder, krizaka-internal#2684)."""
+    return next((c for c in candidates if c.exists()), candidates[0])
+
+
+SEED = _first_existing(
+    *(
+        WORKSPACE_ROOT / "orazaka-apps" / "services" / service / "src" / "main" / "resources" / "db" / "migration" / "V1__job_baseline.sql"
+        for service in ("sovkora-job-service", "orazaka-job-service")
+    )
 )
 WORKER_YAML = Path(__file__).resolve().parent / "worker.yaml"
 

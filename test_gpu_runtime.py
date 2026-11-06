@@ -181,9 +181,9 @@ class TestTheStudioOffersWhatTheCatalogueAndThisWorkerKnow(unittest.TestCase):
         offered = blueprint["inputSchema"]["properties"].get("model", {}).get("enum")
         if not offered:
             self.skipTest("this blueprint offers no model list yet")
-        seed = (
-            workspace / "orazaka-apps" / "services" / "orazaka-job-service" / "infra" / "initdb" / "30-jobs-config.sql"
-        ).read_text()
+        services = workspace / "orazaka-apps" / "services"
+        service = next((d for d in ("sovkora-job-service", "orazaka-job-service") if (services / d).is_dir()), "sovkora-job-service")
+        seed = (services / service / "infra" / "initdb" / "30-jobs-config.sql").read_text()
         registry = _main().MODEL_REGISTRY
         for name in offered:
             self.assertRegex(
