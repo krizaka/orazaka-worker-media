@@ -45,6 +45,8 @@ if WORKSPACE_ROOT is None:
         "the capability seed lives in orazaka-job-service: run inside the Orazaka workspace",
         allow_module_level=True,
     )
+
+
 def _first_existing(*candidates: Path) -> Path:
     """The Sovkora layout, else the former Orazaka one (the workspace moves folder by folder, krizaka-internal#2684)."""
     return next((c for c in candidates if c.exists()), candidates[0])
@@ -52,7 +54,16 @@ def _first_existing(*candidates: Path) -> Path:
 
 SEED = _first_existing(
     *(
-        WORKSPACE_ROOT / "orazaka-apps" / "services" / service / "src" / "main" / "resources" / "db" / "migration" / "V1__job_baseline.sql"
+        WORKSPACE_ROOT
+        / "orazaka-apps"
+        / "services"
+        / service
+        / "src"
+        / "main"
+        / "resources"
+        / "db"
+        / "migration"
+        / "V1__job_baseline.sql"
         for service in ("sovkora-job-service", "orazaka-job-service")
     )
 )
@@ -108,7 +119,9 @@ def _source_for(routing_key: str) -> str:
     """The handler source that serves this routing key."""
     for prefix, modules in HANDLERS.items():
         if routing_key.startswith(prefix):
-            return "\n".join((Path(__file__).resolve().parent / module).read_text() for module in modules)
+            return "\n".join(
+                (Path(__file__).resolve().parent / module).read_text() for module in modules
+            )
     raise AssertionError(f"this worker drains {routing_key} and no module is named for it")
 
 
