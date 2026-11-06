@@ -115,7 +115,9 @@ class TestModelRouting(unittest.TestCase):
             # OpenRAIL-M permits commercial use (with use restrictions): AnimateDiff Lightning's card says so.
             # The LTX-Video Open Weights License 0.X grants commercial use with no revenue clause (read in the model's licence file).
             self.assertIn(
-                spec["licence"], {"Apache-2.0", "MIT", "CreativeML OpenRAIL-M", "LTX-Video-Open-Weights-0.X"}, name
+                spec["licence"],
+                {"Apache-2.0", "MIT", "CreativeML OpenRAIL-M", "LTX-Video-Open-Weights-0.X"},
+                name,
             )
             if spec["pipeline"] in ("wan", "ltx"):
                 self.assertRegex(spec["revision"], r"^[0-9a-f]{40}$", name)
@@ -181,13 +183,18 @@ class TestTheStudioOffersWhatTheCatalogueAndThisWorkerKnow(unittest.TestCase):
         offered = blueprint["inputSchema"]["properties"].get("model", {}).get("enum")
         if not offered:
             self.skipTest("this blueprint offers no model list yet")
-        seed = (
-            workspace / "orazaka-apps" / "services" / "orazaka-job-service" / "infra" / "initdb" / "30-jobs-config.sql"
-        ).read_text()
+        services = workspace / "orazaka-apps" / "services"
+        service = next(
+            (d for d in ("sovkora-job-service", "orazaka-job-service") if (services / d).is_dir()),
+            "sovkora-job-service",
+        )
+        seed = (services / service / "infra" / "initdb" / "30-jobs-config.sql").read_text()
         registry = _main().MODEL_REGISTRY
         for name in offered:
             self.assertRegex(
-                seed, rf"\('{re.escape(name)}', '[^']+', 'video'", f"{name} is not a video row of the catalogue"
+                seed,
+                rf"\('{re.escape(name)}', '[^']+', 'video'",
+                f"{name} is not a video row of the catalogue",
             )
             self.assertIn(name, registry, f"{name} is not a model this worker runs")
         aspects = blueprint["inputSchema"]["properties"].get("aspect", {}).get("enum", [])
@@ -209,7 +216,8 @@ class TestSdServerLine(unittest.TestCase):
         self.assertIn("--diffusion-fa", line)
         self.assertNotIn("--offload-to-cpu", line)
         self.assertIn(
-            "--offload-to-cpu", sd_server.args("flux-2-klein-4b", Path("/m"), 8086, {"MEDIA_IMAGE_OFFLOAD": "true"})
+            "--offload-to-cpu",
+            sd_server.args("flux-2-klein-4b", Path("/m"), 8086, {"MEDIA_IMAGE_OFFLOAD": "true"}),
         )
 
     def test_the_flux_schnell_line(self):
@@ -368,11 +376,19 @@ class TestWanThroughTheHttpPipeline(unittest.TestCase):
             patch.object(self.main, "generate_video_frames") as svd,
         ):
             status, body = self._post(
-                {"prompt": "x", "model": "animatediff-lightning-mps", "aspect": "9:16", "output_path": out}
+                {
+                    "prompt": "x",
+                    "model": "animatediff-lightning-mps",
+                    "aspect": "9:16",
+                    "output_path": out,
+                }
             )
         self.assertEqual(200, status, body)
         svd.assert_not_called()
-        self.assertEqual((432, 768), (animatediff.call_args.kwargs["width"], animatediff.call_args.kwargs["height"]))
+        self.assertEqual(
+            (432, 768),
+            (animatediff.call_args.kwargs["width"], animatediff.call_args.kwargs["height"]),
+        )
 
     def test_an_aspect_the_model_cannot_make_is_a_400(self):
         status, _ = self._post({"prompt": "x", "model": "wan2.2-ti2v-5b", "aspect": "4:3"})
@@ -518,7 +534,13 @@ class TestAssetHandOver(unittest.TestCase):
 
     def test_a_path_is_never_an_asset_name(self):
         with self.assertRaises(asset_sink.AssetSinkError):
-            asset_sink.upload(self.path, self.job, "../video.mp4", "video/mp4", {"MEDIA_ASSET_SINK_URL": "http://x"})
+            asset_sink.upload(
+                self.path,
+                self.job,
+                "../video.mp4",
+                "video/mp4",
+                {"MEDIA_ASSET_SINK_URL": "http://x"},
+            )
 
     def test_no_token_no_upload(self):
         with (
@@ -556,7 +578,10 @@ class TestConsumerOnAGpuHost(unittest.TestCase):
         import app.consumer as consumer
 
         job = {"jobId": "j", "userId": "u", "payload": {"prompt": "x", "aspect": "4:3"}}
-        with patch.object(consumer.urllib.request, "urlopen") as urlopen, self.assertRaises(consumer.InvalidJobPayload):
+        with (
+            patch.object(consumer.urllib.request, "urlopen") as urlopen,
+            self.assertRaises(consumer.InvalidJobPayload),
+        ):
             consumer._generate(job)
         urlopen.assert_not_called()
 
@@ -575,7 +600,10 @@ class TestConsumerOnAGpuHost(unittest.TestCase):
 
         channel.connection.add_callback_threadsafe.side_effect = lambda fn: (fn(), done.set())
         body = json.dumps({"jobId": "j", "userId": "u", "payload": {"prompt": "x"}}).encode()
-        with patch.object(consumer, "_generate", side_effect=fake_generate), patch.object(consumer, "send_job_done"):
+        with (
+            patch.object(consumer, "_generate", side_effect=fake_generate),
+            patch.object(consumer, "send_job_done"),
+        ):
             consumer._dispatch(channel, method, None, body)
             self.assertTrue(done.wait(5))
         self.assertEqual(["media-job"], names)
@@ -659,7 +687,11 @@ class TestHeartbeat(unittest.TestCase):
         model = MagicMock(pipeline="ltx")
         with (
             patch.dict(os.environ, {"MEDIA_HEARTBEAT_FILE": str(target)}),
-            patch.object(wan_generator, "_load_ltx", side_effect=lambda m: seen.append(target.exists()) or "pipe"),
+            patch.object(
+                wan_generator,
+                "_load_ltx",
+                side_effect=lambda m: seen.append(target.exists()) or "pipe",
+            ),
         ):
             self.assertEqual("pipe", wan_generator._load(model))
         self.assertEqual([True], seen, "the heartbeat is fresh while the weights load")

@@ -93,7 +93,15 @@ class TestTheRunnerCollectsEveryDefinedTest(unittest.TestCase):
     """
 
     REPOSITORY = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    SKIPPED_DIRECTORIES = {".git", ".venv", "node_modules", "target", "__pycache__", "dist", ".next"}
+    SKIPPED_DIRECTORIES = {
+        ".git",
+        ".venv",
+        "node_modules",
+        "target",
+        "__pycache__",
+        "dist",
+        ".next",
+    }
 
     # A suite that exists and CANNOT run here, each with the condition that keeps it so. The
     # condition is checked: the day it stops holding, the entry is stale and this class fails,
@@ -744,10 +752,12 @@ class TestConsumerDispatch(unittest.TestCase):
         self.assertIsNone(_requested_model({"model": ""}, {"model": "default"}))
         self.assertIsNone(_requested_model({}, {}))
         self.assertEqual(
-            _requested_model({"model": ""}, {"model": "mlx-animatediff-lightning"}), "mlx-animatediff-lightning"
+            _requested_model({"model": ""}, {"model": "mlx-animatediff-lightning"}),
+            "mlx-animatediff-lightning",
         )
         self.assertEqual(
-            _requested_model({"model": "animatediff-lightning-mps"}, {"model": "default"}), "animatediff-lightning-mps"
+            _requested_model({"model": "animatediff-lightning-mps"}, {"model": "default"}),
+            "animatediff-lightning-mps",
         )
 
     def test_compose_is_decided_by_the_routing_key(self):
@@ -858,6 +868,9 @@ class TestTypedFailureCause(unittest.TestCase):
         self.assertIn("INPUT_INVALID", declared)
 
 
+_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")
+
+
 class TestEnvelopeInterop(unittest.TestCase):
     """The asset envelope, and that both languages agree on it (ADR-054 §6).
 
@@ -867,16 +880,17 @@ class TestEnvelopeInterop(unittest.TestCase):
     the same fixed key and compares plaintext, then writes its own for Java to read back.
     """
 
-    FIXTURE_DIR = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..",
-        "..",
-        "..",
-        "orazaka-libs",
-        "orazaka-ai-engine",
-        "orazaka-assets",
-        "target",
-        "interop",
+    # The Sovkora layout, else the former Orazaka one (the workspace moves folder by folder, krizaka-internal#2684).
+    FIXTURE_DIR = next(
+        (
+            os.path.join(_ROOT, *parts, "target", "interop")
+            for parts in (
+                ("sovkora-libs", "sovkora-engine", "sovkora-assets"),
+                ("orazaka-libs", "orazaka-ai-engine", "orazaka-assets"),
+            )
+            if os.path.isdir(os.path.join(_ROOT, *parts))
+        ),
+        os.path.join(_ROOT, "sovkora-libs", "sovkora-engine", "sovkora-assets", "target", "interop"),
     )
 
     def _keyring(self):
@@ -1000,7 +1014,17 @@ class TestCompositionDivergenceContract(unittest.TestCase):
             self.photos.append(path)
         self.short_voiceover = os.path.join(self.workdir, "voiceover.m4a")
         subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac", self.short_voiceover],
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2",
+                "-c:a",
+                "aac",
+                self.short_voiceover,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=True,
