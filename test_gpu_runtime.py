@@ -58,9 +58,7 @@ class TestAspect(unittest.TestCase):
             self.assertEqual(0, width % model.multiple, model.name)
             self.assertEqual(0, height % model.multiple, model.name)
             ratio = height / width
-            self.assertAlmostEqual(
-                16 / 9, ratio, delta=0.06, msg=model.name
-            )  # LTX is trained at 704x1216 (1.73)
+            self.assertAlmostEqual(16 / 9, ratio, delta=0.06, msg=model.name)  # LTX is trained at 704x1216 (1.73)
 
     def test_wan_sizes_are_the_ones_it_was_trained_at(self):
         self.assertEqual((704, 1280), video_models.find("wan2.2-ti2v-5b").size_for("9:16"))
@@ -68,9 +66,7 @@ class TestAspect(unittest.TestCase):
         self.assertEqual((480, 832), video_models.find("wan2.1-t2v-1.3b").size_for("9:16"))
 
     def test_an_explicit_size_wins_rounded_to_the_model_grid(self):
-        self.assertEqual(
-            (704, 1248), video_models.find("wan2.2-ti2v-5b").size_for("16:9", 710, 1250)
-        )
+        self.assertEqual((704, 1248), video_models.find("wan2.2-ti2v-5b").size_for("16:9", 710, 1250))
 
     def test_wan_counts_frames_on_its_4k_plus_1_grid(self):
         five_b = video_models.find("wan2.2-ti2v-5b")
@@ -92,12 +88,8 @@ class TestModelRouting(unittest.TestCase):
                 {"MEDIA_VIDEO_DEFAULT_MODEL": "wan2.1-t2v-1.3b", "MEDIA_GPU_PROFILE": "big"}
             ),
         )
-        self.assertEqual(
-            "wan2.2-ti2v-5b", video_models.default_model_name({"MEDIA_GPU_PROFILE": "big"})
-        )
-        self.assertEqual(
-            "wan2.1-t2v-1.3b", video_models.default_model_name({"MEDIA_GPU_PROFILE": "small"})
-        )
+        self.assertEqual("wan2.2-ti2v-5b", video_models.default_model_name({"MEDIA_GPU_PROFILE": "big"}))
+        self.assertEqual("wan2.1-t2v-1.3b", video_models.default_model_name({"MEDIA_GPU_PROFILE": "small"}))
         self.assertEqual("animatediff-lightning-mps", video_models.default_model_name({}))
 
     def test_an_unknown_model_is_refused_by_name(self):
@@ -141,20 +133,10 @@ class TestModelRouting(unittest.TestCase):
         workspace = _workspace_root()
         if workspace is None:
             self.skipTest("the CLI's recipe lives in the Orazaka workspace")
-        recipes = (
-            workspace
-            / "orazaka-apps"
-            / "ui"
-            / "orazaka-cli"
-            / "src"
-            / "services"
-            / "image-model-recipes.json"
-        )
+        recipes = workspace / "orazaka-apps" / "ui" / "orazaka-cli" / "src" / "services" / "image-model-recipes.json"
         cli = {model["id"]: model for model in json.loads(recipes.read_text())["models"]}
         for name, spec in video_models.load_manifest()["image"].items():
-            if spec.get(
-                "workerOnly"
-            ):  # a model only this worker serves (flux-1-schnell): its licence is checked below
+            if spec.get("workerOnly"):  # a model only this worker serves (flux-1-schnell): its licence is checked below
                 continue
             self.assertIn(name, cli)
             ours = {(f["path"], f["sha256"], f["bytes"]) for f in spec["files"]}
@@ -195,12 +177,7 @@ class TestTheStudioOffersWhatTheCatalogueAndThisWorkerKnow(unittest.TestCase):
             self.skipTest("the blueprint and the catalogue live in the Orazaka workspace")
         blueprint = json.loads(
             (
-                workspace
-                / "orazaka-packs"
-                / "orazaka-media"
-                / "studios"
-                / "video-generation"
-                / "blueprint.json"
+                workspace / "orazaka-packs" / "orazaka-media" / "studios" / "video-generation" / "blueprint.json"
             ).read_text()
         )
         offered = blueprint["inputSchema"]["properties"].get("model", {}).get("enum")
@@ -234,9 +211,7 @@ class TestSdServerLine(unittest.TestCase):
         line = sd_server.args("flux-2-klein-4b", Path("/models"), 8086, {})
         self.assertEqual(["--listen-ip", "0.0.0.0", "--listen-port", "8086"], line[:4])  # noqa: S104
         self.assertIn("--diffusion-model", line)
-        self.assertEqual(
-            "/models/sd/flux2-klein-4b/Qwen3-4B-Q8_0.gguf", line[line.index("--llm") + 1]
-        )
+        self.assertEqual("/models/sd/flux2-klein-4b/Qwen3-4B-Q8_0.gguf", line[line.index("--llm") + 1])
         self.assertEqual("4", line[line.index("--steps") + 1])
         self.assertIn("--diffusion-fa", line)
         self.assertNotIn("--offload-to-cpu", line)
@@ -251,9 +226,7 @@ class TestSdServerLine(unittest.TestCase):
         line = sd_server.args("flux-1-schnell", Path("/models"), 8086, {})
         for flag in ("--diffusion-model", "--clip_l", "--t5xxl", "--vae"):
             self.assertIn(flag, line)
-        self.assertEqual(
-            "/models/sd/flux1-schnell/t5xxl_fp16.safetensors", line[line.index("--t5xxl") + 1]
-        )
+        self.assertEqual("/models/sd/flux1-schnell/t5xxl_fp16.safetensors", line[line.index("--t5xxl") + 1])
         self.assertEqual("4", line[line.index("--steps") + 1])
         self.assertEqual("1.0", line[line.index("--cfg-scale") + 1])
         self.assertEqual("euler", line[line.index("--sampling-method") + 1])
@@ -399,9 +372,7 @@ class TestWanThroughTheHttpPipeline(unittest.TestCase):
         frame = MagicMock()
         frame.size = (432, 768)
         with (
-            patch.object(
-                self.main, "generate_video_frames_mlx", return_value=[frame] * 16
-            ) as animatediff,
+            patch.object(self.main, "generate_video_frames_mlx", return_value=[frame] * 16) as animatediff,
             patch.object(self.main, "generate_video_frames") as svd,
         ):
             status, body = self._post(
@@ -503,10 +474,7 @@ class TestBrokerLogin(unittest.TestCase):
         )
         self.assertEqual("broker-dev.orazaka.com", params.ssl_options.server_hostname)
         self.assertEqual(ssl.CERT_REQUIRED, params.ssl_options.context.verify_mode)
-        subjects = [
-            dict(x[0] for x in cert["subject"])
-            for cert in params.ssl_options.context.get_ca_certs()
-        ]
+        subjects = [dict(x[0] for x in cert["subject"]) for cert in params.ssl_options.context.get_ca_certs()]
         self.assertIn({"commonName": "test CA"}, subjects)
 
     def test_the_local_default_is_unchanged(self):
@@ -558,9 +526,7 @@ class TestAssetHandOver(unittest.TestCase):
         ):
             url = asset_sink.upload(self.path, self.job, "video.mp4", "video/mp4", env)
         self.assertEqual("/api/v1/assets/job-9/video.mp4", url)
-        self.assertEqual(
-            "http://127.0.0.1:8090/internal/v1/jobs/job-9/output/video.mp4", sent["url"]
-        )
+        self.assertEqual("http://127.0.0.1:8090/internal/v1/jobs/job-9/output/video.mp4", sent["url"])
         self.assertEqual("PUT", sent["method"])
         self.assertEqual("Bearer tok", sent["headers"]["Authorization"])
         self.assertEqual("user-1", sent["headers"]["X-orazaka-user-id"])
@@ -581,18 +547,14 @@ class TestAssetHandOver(unittest.TestCase):
             patch.object(asset_sink, "_service_token", return_value=None),
             self.assertRaises(asset_sink.AssetSinkError),
         ):
-            asset_sink.upload(
-                self.path, self.job, "video.mp4", "video/mp4", {"MEDIA_ASSET_SINK_URL": "http://x"}
-            )
+            asset_sink.upload(self.path, self.job, "video.mp4", "video/mp4", {"MEDIA_ASSET_SINK_URL": "http://x"})
 
     def test_the_consumer_hands_over_and_deletes_when_a_sink_is_declared(self):
         import app.consumer as consumer
 
         with (
             patch.dict(os.environ, {"MEDIA_ASSET_SINK_URL": "http://127.0.0.1:8090"}),
-            patch.object(
-                consumer.asset_sink, "upload", return_value="/api/v1/assets/job-9/video.mp4"
-            ) as upload,
+            patch.object(consumer.asset_sink, "upload", return_value="/api/v1/assets/job-9/video.mp4") as upload,
             patch.object(consumer, "_seal") as seal,
         ):
             url = consumer._store(self.path, self.job, "video.mp4", "video/mp4", "/uploads/x")
@@ -677,9 +639,7 @@ class TestHeartbeat(unittest.TestCase):
             deadline = time.time() + 2
             while target.stat().st_mtime == 0 and time.time() < deadline:
                 time.sleep(0.02)
-            self.assertGreater(
-                target.stat().st_mtime, 0, "the file is touched again while the work runs"
-            )
+            self.assertGreater(target.stat().st_mtime, 0, "the file is touched again while the work runs")
 
     def test_the_beat_stops_when_the_work_ends_even_on_failure(self):
         target = self._target()
@@ -689,9 +649,7 @@ class TestHeartbeat(unittest.TestCase):
                 raise RuntimeError("the job failed")
         os.utime(target, (0, 0))
         time.sleep(0.2)
-        self.assertEqual(
-            0, target.stat().st_mtime, "no beat after the work: an idle pod must look idle"
-        )
+        self.assertEqual(0, target.stat().st_mtime, "no beat after the work: an idle pod must look idle")
         self.assertFalse([t for t in threading.enumerate() if t.name == "media-heartbeat"])
 
     def test_without_a_declared_file_nothing_beats(self):
