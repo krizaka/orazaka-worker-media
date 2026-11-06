@@ -1,6 +1,6 @@
 # Builds and tests orazaka-worker-media inside the Orazaka workspace (every upstream repository is
 # built from source at its default branch), then publishes to GitHub Packages on a v* tag.
-# The pipeline itself lives in krizaka/orazaka so every repository is checked the same way.
+# The pipeline itself lives in krizaka/sovkora so every repository is checked the same way.
 name: CI
 
 on:
@@ -25,7 +25,7 @@ jobs:
       # The shared component pipeline publishes npm packages with provenance (OIDC): a reusable
       # workflow cannot be granted more than its caller holds, so its absence fails at startup.
       id-token: write
-    uses: krizaka/orazaka/.github/workflows/component.yml@7811f56c86053a9dfd68cd871d8e7102c9b527bb # main
+    uses: krizaka/sovkora/.github/workflows/component.yml@7811f56c86053a9dfd68cd871d8e7102c9b527bb # main
     with:
       component: orazaka-worker-media
       duplication: true
