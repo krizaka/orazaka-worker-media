@@ -1,6 +1,6 @@
 # Python guards of the org (krizaka-internal#2115): ruff format and check counted per rule in lang-ratchet.json (debt only goes down),
 # import-linter when contracts are declared, deptry. Reusable workflow of krizaka/.github, pinned by sha.
-name: lang-guards
+name: Language guards
 
 on:
   pull_request:
