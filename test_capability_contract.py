@@ -119,7 +119,9 @@ def _source_for(routing_key: str) -> str:
     """The handler source that serves this routing key."""
     for prefix, modules in HANDLERS.items():
         if routing_key.startswith(prefix):
-            return "\n".join((Path(__file__).resolve().parent / module).read_text() for module in modules)
+            return "\n".join(
+                (Path(__file__).resolve().parent / module).read_text() for module in modules
+            )
     raise AssertionError(f"this worker drains {routing_key} and no module is named for it")
 
 
